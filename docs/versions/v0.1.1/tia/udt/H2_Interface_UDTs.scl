@@ -1,0 +1,89 @@
+TYPE "H2Control_UDT"
+TITLE = Leben, Version und Betriebsmodus der Schnittstelle
+// Steuer- und Diagnosedaten der OPC-UA-Schnittstelle zwischen S7-1500 und Unitree H2-PLUS.
+// Heartbeat- und Alive-Logik fuer die gegenseitige Lebenszeichenueberwachung.
+   VERSION : 0.1
+   STRUCT
+      interfaceVersion : UInt;   // Schnittstellenversion, z.B. 100 = V1.00 (von SPS gesetzt, H2 prueft)
+      plcHeartbeat : UInt;   // SPS-Lebenszaehler, zyklisch +1
+      robotHeartbeat : UInt;   // H2-Lebenszaehler, zyklisch +1
+      plcAlive : Bool;   // H2 wertet aus: SPS-Heartbeat aendert sich
+      robotAlive : Bool;   // SPS wertet aus: H2-Heartbeat aendert sich
+      robotConnected : Bool;   // OPC-UA-Client verbunden
+      operatingMode : Int;   // Betriebsmodus: 0=Aus 1=Hand 2=Auto 3=Einrichten
+   END_STRUCT;
+END_TYPE
+
+TYPE "H2PlcToRobot_UDT"
+TITLE = Auftrag und Maschinenzustand von der SPS zum Roboter
+// Datenrichtung SPS -> H2: Auftragsvorgabe der Induktionshaertemaschine sowie
+// gespiegelte Maschinen-Sicherheitszustaende (Tuer, Spannvorrichtung, Bearbeitung).
+   VERSION : 0.1
+   STRUCT
+      jobRequest : Int;   // Auftrag: 0=keiner 1=Laden 2=Entladen 3=Induktorwechsel
+      jobId : DInt;   // fortlaufende Auftrags-ID
+      partType : Int;   // Werkstuecktyp / Programmnummer
+      jobReqToggle : Bool;   // SPS invertiert bei NEUEM Auftrag (flankenneutrale Auftragsuebergabe)
+      machineReady : Bool;   // Maschine betriebsbereit
+      doorOpen : Bool;   // Maschinentuer offen
+      doorClosed : Bool;   // Maschinentuer geschlossen
+      clampOpen : Bool;   // Spannvorrichtung offen
+      clampClosed : Bool;   // Spannvorrichtung geschlossen
+      machineCycleRun : Bool;   // Bearbeitung laeuft
+      machineFault : Bool;   // Maschinenstoerung
+      zoneFreeForRobot : Bool;   // Eintritt erlaubt (Tuer offen, keine Bewegung)
+      partInClamp : Bool;   // Werkstueck eingespannt erkannt
+   END_STRUCT;
+END_TYPE
+
+TYPE "H2RobotToPlc_UDT"
+TITLE = Zustand und Anforderungen vom Roboter zur SPS
+// Datenrichtung H2 -> SPS: Roboterzustand, Auftragsquittierung und Anforderungen an die
+// Maschine (Tuer/Spannvorrichtung). robotInMachine ist sicherheitsrelevant fuer die Verriegelung.
+   VERSION : 0.1
+   STRUCT
+      robotState : Int;   // Roboterzustand: 0=Init 1=Idle 2=Busy 3=Done 4=Error 5=NotReady
+      jobIdEcho : DInt;   // gespiegelte Auftrags-ID (Plausibilitaetspruefung)
+      jobAckToggle : Bool;   // H2 spiegelt jobReqToggle bei Annahme des Auftrags
+      jobDoneToggle : Bool;   // H2 invertiert bei Fertigstellung des Auftrags
+      jobResult : Int;   // Auftragsergebnis: 0=offen 1=OK 2=NOK
+      currentStep : Int;   // Diagnose: aktueller Ablaufschritt im Roboterprogramm
+      reqOpenDoor : Bool;   // H2 fordert: Maschinentuer oeffnen
+      reqCloseDoor : Bool;   // H2 fordert: Maschinentuer schliessen
+      reqOpenClamp : Bool;   // H2 fordert: Spannvorrichtung oeffnen
+      reqCloseClamp : Bool;   // H2 fordert: Spannvorrichtung schliessen
+      robotReady : Bool;   // Roboter betriebsbereit
+      robotBusy : Bool;   // Roboter arbeitet
+      gripperHoldsPart : Bool;   // Greifer haelt Werkstueck
+      robotInMachine : Bool;   // KRITISCH: H2 im Gefahrenbereich -> Tuer/Spannen verriegeln
+      errorActive : Bool;   // Fehler aktiv
+      errorCode : DInt;   // Fehlernummer (auf Meldetextliste mapbar)
+   END_STRUCT;
+END_TYPE
+
+TYPE "H2Safety_UDT"
+TITLE = Funktionale Sicherheitsspiegel (NICHT sicherheitsgerichtet)
+// Funktionale Abbilder der Sicherheitssignale ueber OPC UA. ACHTUNG: Dies ersetzt KEINE
+// sicherheitsgerichtete Verschaltung. Der echte Not-Halt bleibt HARDWIRED ueber die Safety-SPS.
+   VERSION : 0.1
+   STRUCT
+      estopFromPlc : Bool;   // Not-Halt SPS-Seite (funktionaler Spiegel, nicht sicherheitsgerichtet)
+      estopFromRobot : Bool;   // Not-Halt H2-Seite (funktionaler Spiegel, nicht sicherheitsgerichtet)
+      safeZoneClear : Bool;   // Bereich sicher (funktionale Anzeige)
+      robotEnable : Bool;   // Bewegungsfreigabe von SPS (funktionale Freigabe)
+      watchdogFault : Bool;   // Heartbeat-Timeout erkannt (Watchdog ausgeloest)
+   END_STRUCT;
+END_TYPE
+
+TYPE "H2Interface_UDT"
+TITLE = Container der gesamten H2-PLUS-Schnittstelle
+// Zusammenfassender Container fuer alle vier Teilbereiche der Schnittstelle. Wird im
+// Datenbaustein "H2_Interface_DB" als Member "iface" instanziiert und ueber OPC UA bereitgestellt.
+   VERSION : 0.1
+   STRUCT
+      control : "H2Control_UDT";   // Leben, Version, Betriebsmodus
+      plcToRobot : "H2PlcToRobot_UDT";   // SPS -> H2: Auftrag und Maschinenzustand
+      robotToPlc : "H2RobotToPlc_UDT";   // H2 -> SPS: Zustand und Anforderungen
+      safety : "H2Safety_UDT";   // Funktionale Sicherheitsspiegel
+   END_STRUCT;
+END_TYPE
