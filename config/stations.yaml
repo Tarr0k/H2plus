@@ -1,0 +1,8 @@
+# Benannte Standorte in der Zelle. Position [x, y, theta] in der Zellen-Basis (m, m, rad).
+# Platzhalterwerte — am Zielsystem einmessen.
+stations:
+  home:           { position: [0.0, 0.0, 0.0],    description: "Parkposition" }
+  part_storage:   { position: [2.0, 1.0, 1.57],   description: "Teilelager / Rohteil-Magazin" }
+  machine:        { position: [0.0, 2.0, 0.0],    description: "Induktionshaertemaschine (Beschickung)" }
+  dropoff_box:    { position: [-1.5, 1.0, -1.57], description: "Kiste fuer Fertigteile" }
+  inductor_shelf: { position: [1.5, -1.5, 0.78],  description: "Regal mit Induktoren (Werkzeugwechsel)" }
