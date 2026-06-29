@@ -1,0 +1,15 @@
+# Funktionales (NICHT sicherheitsgerichtetes) Zonenmodell. Betriebsart: getrennt/abgesichert.
+# Echter Personenschutz = hardwired Safety-SPS + sichere Sensorik (siehe docs/safety_concept.md).
+operation_mode: "separated"
+zones:
+  transit:      { speed_limit: 0.8, robot_allowed: true,  description: "Transitkorridor / Parkbereich (home)" }
+  machine_zone: { speed_limit: 0.3, robot_allowed: true,  description: "Maschinenbeschickung" }
+  storage_zone: { speed_limit: 0.5, robot_allowed: true,  description: "Teilelager" }
+  dropoff_zone: { speed_limit: 0.5, robot_allowed: true,  description: "Fertigteil-Kiste" }
+  shelf_zone:   { speed_limit: 0.3, robot_allowed: true,  description: "Induktor-Regal" }
+station_zone:
+  home:           transit
+  part_storage:   storage_zone
+  machine:        machine_zone
+  dropoff_box:    dropoff_zone
+  inductor_shelf: shelf_zone
