@@ -1,0 +1,15 @@
+# Geometrie der Induktionshärtemaschine und der Spannvorrichtung.
+# Platzhalterwerte — auf dem Zielsystem einmessen.
+machine:
+  name: "Induktionshaertemaschine"
+  base_frame: "world"
+
+fixture:
+  # Lage der Spannvorrichtung relativ zur Roboterbasis [m] (x, y, z).
+  position: [0.60, 0.00, 0.80]
+  # Werkstückaufnahme (Rohteil-Magazin/Förderer).
+pickup:
+  position: [0.40, -0.30, 0.75]
+# Ablage für Fertigteile.
+dropoff:
+  position: [0.40, 0.30, 0.75]

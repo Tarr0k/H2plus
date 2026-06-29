@@ -1,0 +1,14 @@
+# Roboter-/Treiberkonfiguration für den Unitree H2 PLUS.
+# driver: "sim" (MuJoCo, gleiche DDS wie HW) | "sdk" (echte HW via unitree_sdk2_python)
+driver: sim
+
+arms:
+  left:
+    # Gelenkgrenzen [rad] je der 7 Achsen (Platzhalterwerte — am Zielsystem anpassen).
+    joint_limits_lower: [-3.14, -2.50, -3.14, -2.50, -3.14, -1.57, -3.14]
+    joint_limits_upper: [ 3.14,  2.50,  3.14,  2.50,  3.14,  1.57,  3.14]
+    valve_channel: 0          # H2-IO-Kanal des Greiferventils
+  right:
+    joint_limits_lower: [-3.14, -2.50, -3.14, -2.50, -3.14, -1.57, -3.14]
+    joint_limits_upper: [ 3.14,  2.50,  3.14,  2.50,  3.14,  1.57,  3.14]
+    valve_channel: 1

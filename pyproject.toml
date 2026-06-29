@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h2_loader"
+version = "0.1.0"
+description = "Maschinenlader-Gerüst für den Unitree H2 PLUS (Werkstück laden/entladen an Induktionshärtemaschine)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "H2plus" }]
+dependencies = [
+    "py-trees>=2.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Simulation: gleiche DDS-Schnittstelle wie die reale HW.
+sim = ["mujoco>=3.1"]
+# Maschinen-SPS-Anbindung.
+plc = ["opcua>=0.98", "pymodbus>=3.6"]
+# Späterer Umstieg auf ROS2/MoveIt2 (Platzhalter — wird auf dem Zielsystem via apt/rosdep installiert).
+ros2 = []
+# Späteres KI-Greifen (Isaac Lab / LeRobot) — nicht im ersten Ausbau.
+ai = []
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+h2-loader = "h2_loader.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

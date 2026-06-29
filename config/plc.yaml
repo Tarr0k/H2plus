@@ -1,0 +1,12 @@
+# Anbindung an die Maschinen-SPS (OPC-UA).
+endpoint: "opc.tcp://machine-plc.local:4840"
+
+# Mapping symbolischer Signalname -> OPC-UA NodeId (Platzhalter).
+# Signalnamen entsprechen h2_loader.plc.signals.Signal.
+signals:
+  door_open:    "ns=2;s=Machine.DoorOpen"
+  fixture_free: "ns=2;s=Machine.FixtureFree"
+  part_clamped: "ns=2;s=Machine.PartClamped"
+  cycle_ok:     "ns=2;s=Machine.CycleOk"
+  load_request: "ns=2;s=Machine.LoadRequest"
+  robot_done:   "ns=2;s=Robot.Done"
