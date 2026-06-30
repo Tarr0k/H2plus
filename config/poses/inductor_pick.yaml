@@ -1,0 +1,6 @@
+# Angelernte Pose: Greifpose für den Induktor in der Führung.
+# Gelenkwinkel [rad] je Arm (7 DoF). Platzhalter — per Teach-in einlernen.
+name: inductor_pick
+joints:
+  left:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  right: [0.4, 0.6, 0.0, -1.0, 0.0, 0.8, 0.0]
