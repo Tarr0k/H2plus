@@ -1,0 +1,23 @@
+# Zielkonfiguration für den Digital Twin (unitree_mujoco).
+#
+# unitree_mujoco stellt DIESELBE DDS-Schnittstelle bereit wie der echte H2
+# (rt/lowcmd, rt/lowstate, LocoClient). Unsere realen Adapter (UnitreeSdkDriver,
+# LocoClientVelocitySink) laufen unverändert dagegen — nur Domain/Interface
+# wechseln gegenüber robot.real.yaml.
+#
+# NUR Linux (Unitree-Stack: SDK + CycloneDDS + unitree_mujoco); keine GPU, kein
+# echter Roboter nötig. Vorgehen: siehe docs/bringup.md, Abschnitt "Digital Twin".
+#
+# Der reine Logik-Stub (python -m h2_loader.app --driver sim) braucht dagegen
+# KEIN SDK/MuJoCo und läuft auch auf Windows — testet aber nur den Ablauf, nicht
+# die Physik.
+
+driver: sdk                 # reale Adapter, aber gegen die Sim (Loopback-DDS)
+network_interface: lo       # Loopback (Sim), NICHT enp3s0 (das wäre der echte Roboter)
+domain_id: 1                # 1 = Sim/Loopback (real = 0), SDK-Konvention
+
+# OPC-UA-SPS: im Twin i.d.R. nicht vorhanden. Für einen End-to-End-Test kann
+# lokal ein asyncua-Testserver laufen (vgl. tests/test_asyncua_transport.py).
+plc_endpoint: "opc.tcp://127.0.0.1:4840"
+
+# Gelenkgrenzen/Armparameter werden aus config/robot.yaml übernommen.

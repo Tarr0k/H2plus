@@ -1,0 +1,31 @@
+# Reale Zielkonfiguration für den Unitree H2 (EDU) — Gegenstück zu robot.yaml (Sim).
+#
+# Aktivieren per --config config/robot.real.yaml (h2-loader) bzw. als Basis
+# für den Bring-up-Sequenzer (h2-bringup). Vor dem ersten Reallauf jeden Wert
+# gegen die tatsächliche Anlage prüfen — insbesondere network_interface,
+# mainboard_ip und plc_endpoint sind Platzhalter.
+#
+# Voraussetzung: H2 EDU (Standard-H2 erlaubt keine Secondary Development).
+# NUR mit aktivem Debug-Modus an der Fernbedienung betreiben
+# (L2+R2 aktivieren, L2+A bestaetigen, L2+B Notfall-Damping).
+
+driver: sdk                      # "sim" (MuJoCo) | "sdk" (echte HW via unitree_sdk2_python)
+network_interface: enp3s0        # Ethernet-Interface für die DDS-Kommunikation (ChannelFactoryInitialize)
+domain_id: 0                     # DDS-Domain-ID: 0 = real, 1 = Sim/Loopback (SDK-Konvention)
+mainboard_ip: 192.168.123.161    # IP des H2-Mainboards für den Netzwerk-Check in Bring-up-Phase 0
+
+# SPS-Anbindung (Bring-up-Phase 4) — Platzhalter, siehe plc.yaml für das UDT-Schema.
+plc_endpoint: "opc.tcp://192.168.100.1:4840"
+
+# Gelenkgrenzen je Arm: siehe robot.yaml (arms.left/right.joint_limits_lower/upper).
+# Diese Datei überschreibt nur driver/network_interface/domain_id/mainboard_ip/plc_endpoint;
+# die Gelenkgrenzen bleiben unverändert aus robot.yaml gültig.
+arms:
+  left:
+    joint_limits_lower: [-3.14, -2.50, -3.14, -2.50, -3.14, -1.57, -3.14]
+    joint_limits_upper: [ 3.14,  2.50,  3.14,  2.50,  3.14,  1.57,  3.14]
+    valve_channel: 0
+  right:
+    joint_limits_lower: [-3.14, -2.50, -3.14, -2.50, -3.14, -1.57, -3.14]
+    joint_limits_upper: [ 3.14,  2.50,  3.14,  2.50,  3.14,  1.57,  3.14]
+    valve_channel: 1
