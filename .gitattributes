@@ -1,0 +1,4 @@
+# Zeilenenden normalisieren. Shell-Skripte MÜSSEN unter Linux LF haben,
+# sonst schlägt der Shebang fehl (bad interpreter: ...^M).
+* text=auto
+*.sh text eol=lf
