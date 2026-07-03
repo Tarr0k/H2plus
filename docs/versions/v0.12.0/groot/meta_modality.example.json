@@ -1,0 +1,43 @@
+{
+  "_comment": "Beispiel fuer meta/modality.json eines H2-GR00T-LeRobot-v2-Datensatzes. Beschreibt, an welchen Indizes der flachen state-/action-Vektoren die einzelnen Modality-Keys liegen (start inklusiv, end exklusiv) sowie die Video-/Annotation-Zuordnung. Erzeugt (mit denselben Keys) von h2_loader.dataset.LerobotDatasetExporter.finalize(). Siehe groot/h2_modality_config.py und docs/groot_setup.md.",
+  "state": {
+    "right_arm": {
+      "start": 0,
+      "end": 7,
+      "_comment": "7 Gelenkwinkel des rechten Arms, H2JointIndex 22-28 (RightShoulderPitch..RightWristYaw)"
+    },
+    "gripper": {
+      "start": 7,
+      "end": 8,
+      "_comment": "Pneumatik-Greifer-Zustand des rechten Arms, 0.0=offen .. 1.0=geschlossen"
+    }
+  },
+  "action": {
+    "right_arm": {
+      "start": 0,
+      "end": 7,
+      "_comment": "Soll-Gelenkwinkel [rad] fuer die naechsten 16 Schritte (delta_indices 0..15)"
+    },
+    "gripper": {
+      "start": 7,
+      "end": 8,
+      "_comment": "Soll-Greiferzustand, absolut"
+    }
+  },
+  "video": {
+    "head": {
+      "original_key": "observation.images.head",
+      "_comment": "Kopf-Binokular-Kamera"
+    },
+    "wrist": {
+      "original_key": "observation.images.wrist",
+      "_comment": "Kamera am rechten Handgelenk"
+    }
+  },
+  "annotation": {
+    "human.task_description": {
+      "original_key": "task_index",
+      "_comment": "Aufgabenbeschreibung (z.B. 'load_workpiece'), aufgeloest ueber meta/tasks.jsonl"
+    }
+  }
+}
