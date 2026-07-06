@@ -614,3 +614,36 @@ Generator + Deploy-Pipeline + der austauschbare `BalanceController`-Seam.
 
 **Verifikation:** IK-Round-Trip 1e-6 m (beide Beine, alle Schrittziele); Stand/Gang headless im Twin.
 `pytest` unveraendert (training/ ausserhalb der Suite). Tag `v0.18.0`, Push nach `Tarr0k/H2plus`.
+
+### 2026-07-06 — v0.19.0 — GPU-RL-Training läuft auf der M4000 (MJX + Brax PPO)
+
+**Anwender:** „ohne (neue) GPU weiter, Tage-Training ok" + „auf Platte schreiben, nicht online bleiben".
+Beides erreicht. Umsetzung via Agent-Team (`rl-trainer` schrieb das Skript) + empirische Integration/
+Debugging durch mich auf ematalos.
+
+**Neu:** `training/rl/train_playground.py` (+ `__init__.py`, `README.md`). MuJoCo-Playground-Env
+(`G1JoystickFlatTerrain`, 29-DoF, ideal weil H2≈G1) + Brax-PPO, checkpointet auf Platte, `--resume`,
+`--smoke`, CLI-parametrisiert (env/num-timesteps/num-envs/out-dir/seed).
+
+**Vier verifizierte Versions-Fallen gefixt** (im Skript + README dokumentiert):
+1. Playground default `impl='warp'` crasht (mujoco_warp-Typbug) → `cfg.impl='jax'`.
+2. brax-Domain-Randomizer braucht Playgrounds Wrapper → `wrap_env_fn=wrapper.wrap_for_brax_training`
+   (NACH dem Kwarg-Filter setzen, sonst verschluckt).
+3. brax 0.14.2 nutzt `jax.device_put_replicated` (in jax 0.10 entfernt) → Single-GPU-Shim
+   `_ensure_device_put_replicated` (Broadcast auf führende Geräteachse + device_put), vor train() setzen.
+4. 8 GB VRAM → num_envs klein (Default 8192 = OOM); 256 (smoke) / 1024 (full) getestet, ~7,45 GB stabil.
+
+**Start-Methode (wichtig):** Über Tailscale-DERP lassen sich Hintergrundprozesse NICHT per nohup/setsid/
+screen starten (SSH-255 killt sie vor Ausführung). **Robust: `sudo systemd-run --unit=... --uid=ema
+-p StandardOutput=truncate:/pfad.log ...`** — transiente Unit, entkoppelt von SSH, schreibt auf Platte,
+überlebt Offline. Monitoring: `systemctl is-active <unit>`, `tail metrics.jsonl`, Checkpoints unter
+`~/h2_rl_runs/<run>/{best,ckpt_*,final}` + `env_meta.json`.
+
+**Verifiziert:** Smoke-Test lief komplett (GPU 99%, `metrics.jsonl` mit Reward-Aufschlüsselung +
+`best/`+`ckpt_0/` auf Platte). **Langlauf `g1full` gestartet** (150M Schritte, num_envs 1024) — läuft
+stabil, GPU 99%, kein OOM. eval/sps ~865 (smoke, 256 Envs) → 150M grob 1–2 Tage.
+
+**Nächster Schritt (echtes Ziel H2):** H2-Trainings-Env bauen — MJX-taugliches H2-Modell (Mesh/Zylinder-
+Kollision aus → nur Fuß-Boxen + Ebene; verifiziert dass MJX H2 dann lädt, ~12k steps/s) + Env-Klasse aus
+der G1-Playground-Vorlage (Sensoren/Reward). Dann H2 trainieren → Policy über make_inference_fn+params in
+die Deploy-Pipeline (`training/deploy/`, namensbasiertes Mapping) einhängen. G1 = Pipeline-Beleg/Baseline.
