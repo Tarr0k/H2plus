@@ -545,3 +545,36 @@ Locomotion (RL, Beine) und Manipulation (GR00T/Teach-in, Arme) bleiben getrennte
 
 **Verifikation:** `pytest` 195/1skip unverändert (training/ ohne Einfluss); Knöchel-Reihenfolge unabhängig
 bestätigt. Tag `v0.16.0`, Push nach `github.com/Tarr0k/H2plus`.
+
+### 2026-07-06 — v0.17.0 — Experiment: G1-Policy direkt auf H2 im MuJoCo-Twin (GPU-frei)
+
+**Frage des Anwenders:** „Können wir nicht die G1-Bewegungen nehmen und hochskalieren — wenn's
+schiefgeht, warten wir auf die GPU?" → Ausprobiert (null GPU-Kosten, reine CPU-Inferenz).
+
+**Was:** neues Skript `training/deploy/deploy_h2_g1policy.py`. Führt die vortrainierte G1-Policy
+(`unitree_rl_gym/deploy/pre_train/g1/motion.pt`, TorchScript) auf dem **vollen H2-MJCF** (31 Aktuatoren)
+aus — nur die 12 Beingelenke von der Policy geregelt, Taille/Arme/Kopf auf Startpose gehalten.
+Obs-Konstruktion/Scales/Gait-Phase 1:1 aus Unitrees `deploy_mujoco.py` übernommen (obs=47, 50 Hz).
+`--headless` (SSH-Diagnose mit Sturzerkennung) und Viewer-Modus mit **Auto-Reset bei Sturz**.
+
+**Zwei verifizierte Fallen gelöst — namensbasiertes Mapping:** die 12 Beingelenke werden strikt in
+G1-Reihenfolge über `mj_name2id`+`actuator_trnid`+`jnt_qposadr/jnt_dofadr` abgegriffen. Das löst
+automatisch (a) den Knöchel-Swap (H2 ctrl-Index-Reihenfolge wird real `[0,1,2,3,5,4, 6,7,8,9,11,10]`)
+UND (b) den Unterschied Aktuator-Reihenfolge (Beine,Taille,Arme,Kopf) vs. qpos-Gelenkreihenfolge
+(Beine,Taille,Kopf,Arme) des vollen H2-Modells.
+
+**Ergebnis (headless, reproduzierbar):** Policy läuft dimensional sofort, H2 macht echte Schritte.
+kp_scale 1,0 → Sturz 0,47 s; 2,0 → 0,75 m/1,05 s; **3,0 (Optimum) → 0,86 m vorwärts, Sturz 1,47 s**;
+4,0/5,0 schlechter. Stehen (vx=0) analog max ~1,5 s. **Fazit: „Hochskalieren" einer Policy geht nicht** —
+H2 ~2× G1-Masse, trainierte Balance passt nicht → Sturz nach ~1,5 s; Gain-Anheben ist kein Fix
+(Dynamik-/Policy-Mismatch, kein Gain-Problem). Bestätigt: **echtes Retraining auf RTX-GPU nötig.**
+Nutzen: funktionierende Deploy-Pipeline (obs→Policy→PD→H2 im Twin) steht — die spätere echte
+H2-Policy (`policy.onnx`) wird hier nur eingehängt.
+
+**Betrieb:** CPU-Torch 2.12.1 in die uv-venv installiert (PyTorch-CPU-CDN `download-r2` hatte
+TLS-HandshakeFailure → Default-PyPI-Wheel genommen, läuft auf CPU). Demo im VNC via umgebogener
+`~/.config/tigervnc/xstartup` (Original gesichert als `xstartup.plainviewer.bak`), VNC :2 neu gestartet;
+H2 läuft/kippt/resettet in Endlosschleife, GPU-gerendert (VirtualGL, M4000 ~19 %).
+
+**Verifikation:** headless-Sweep wie oben; Demo-Prozess stabil im VNC. `pytest` unverändert
+(training/ ohne Einfluss auf die Suite). Tag `v0.17.0`, Push nach `github.com/Tarr0k/H2plus`.
