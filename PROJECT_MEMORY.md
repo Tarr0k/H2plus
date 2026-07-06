@@ -578,3 +578,39 @@ H2 läuft/kippt/resettet in Endlosschleife, GPU-gerendert (VirtualGL, M4000 ~19 
 
 **Verifikation:** headless-Sweep wie oben; Demo-Prozess stabil im VNC. `pytest` unverändert
 (training/ ohne Einfluss auf die Suite). Tag `v0.17.0`, Push nach `github.com/Tarr0k/H2plus`.
+
+### 2026-07-06 — v0.18.0 — Modellbasierter Gehregler (kein ML) + ehrlicher Befund
+
+**Auftrag des Anwenders:** Ohne GPU weiter Richtung „H2 laeuft" — gewaehlt: modellbasierter
+Gehregler (rein kinematisch, CPU). Umsetzung ueber Agent-Team (`python-pro` schrieb Modul), danach
+empirische Verifikation/Tuning durch mich im MuJoCo-Twin auf ematalos.
+
+**Neu (`training/gait/` + Runner):**
+- `leg_ik.py` — `LegIK`: Damped-Least-Squares-IK pro Bein via MuJoCo-Jacobi gegen interne Scratch-MjData.
+  **Konvergiert exzellent (Residuum ~1e-6 m, Fuss flach 0°, 2-4 Iter).** Drei verifizierte Fallen gefixt:
+  (1) `mj_comPos` noetig, sonst liefert `mj_jac` Nullmatrix; (2) Orientierungsfehler `mju_subQuat` ist
+  im LOKALEN Frame → in Weltframe drehen; (3) **Kaltstart aus q=0 divergiert (Knie-Singularitaet)** →
+  Default-Startschaetzung = leichte Kniebeuge `[-0.3,0,0,0.6,-0.3,0]` + dq-Clamping.
+- `gait.py` — `QuasiStaticGait`/`GaitParams`: quasi-statischer Gang (Becken ueber Standfuss verlagern,
+  Schwungfuss-Bogen). Params tunebar: pelvis_height 0.90, foot_lateral, step_length/height, cycle_time,
+  ds_ratio, com_shift, **foot_x_offset 0.04** (Knoechel unter CoM).
+- `balance.py` — `BalanceController`(ABC) + `AnkleStrategyBalance`: Knoechel-Sollwinkel aus Rumpfneigung.
+- `walk_controller.py` — `WalkController`: Gait→pelvisrelative Fusszielposen→IK→12 Gelenkwinkel.
+- `deploy/deploy_h2_walk.py` — Runner (Mapping/PD/headless/Viewer wie deploy_h2_g1policy.py).
+
+**Ehrlicher Kernbefund (im Twin verifiziert):** Ein **positionsgeregelter H2 (72 kg, 29 DoF) ist ein
+INSTABILES Gleichgewicht**. Selbst bei perfekter Standpose (CoM in Stuetzflaeche, Fuesse flach) kippt er
+ohne Rueckkopplung nach ~1,7 s. Diagnose-Kette: CoM lag ~0,1 m VOR dem Knoechel-Pivot (→ foot_x_offset
+loest das); dann kippt er in die andere Richtung → grundsaetzliche dynamische Instabilitaet. **Hoehere
+Gains + steifere Knoechel machen es SCHLECHTER** (kein Kraftmangel; Aktuatoren sind unbegrenzte
+Drehmoment-Motoren). Ankle-Strategie-Feedback hilft (Drift ~0, best ~4 s bei kp=0.7/kd=0.6, pelvis 0.90,
+hold_kp 200), aber **stabiles Stehen/Gehen wird NICHT erreicht** — er faellt tuning-abhaengig nach ~2-4 s.
+
+**Schlussfolgerung:** Das ist genau der Grund, warum Humanoid-Locomotion praktisch immer RL nutzt.
+Robustes model-based Gehen braucht einen **Ganzkoerper-Balanceregler** (LIPM/Capture-Point +
+Schrittanpassung bzw. Whole-Body-QP) — ein mehrtaegiges Regelungsprojekt (CPU moeglich) — ODER eine
+gelernte Policy (Cloud-GPU, wenige Stunden). Wiederverwendbar bleibt die **erstklassige IK** + Gait-
+Generator + Deploy-Pipeline + der austauschbare `BalanceController`-Seam.
+
+**Verifikation:** IK-Round-Trip 1e-6 m (beide Beine, alle Schrittziele); Stand/Gang headless im Twin.
+`pytest` unveraendert (training/ ausserhalb der Suite). Tag `v0.18.0`, Push nach `Tarr0k/H2plus`.

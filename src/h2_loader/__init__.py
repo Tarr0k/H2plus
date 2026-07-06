@@ -13,4 +13,4 @@ Dieser Stand ist bewusst Gerüst + Stubs — es findet keine echte Roboterbewegu
 statt. Ausführung/Tests final auf dem Ubuntu-Zielsystem.
 """
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
