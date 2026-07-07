@@ -19,6 +19,7 @@ from .core.orchestrator import Orchestrator
 from .core.safety import SafetyGate, SafetySupervisor
 from .hal.arm import Arm
 from .hal.drivers.base import RobotDriverInterface
+from .hal.drivers.dds_twin_driver import DdsTwinDriver
 from .hal.drivers.mujoco_sim_driver import MujocoSimDriver
 from .hal.drivers.unitree_sdk_driver import UnitreeSdkDriver
 from .hal.end_effector.pneumatic_gripper import PneumaticGripper
@@ -57,7 +58,11 @@ def build_driver(name: str) -> RobotDriverInterface:
         return MujocoSimDriver()
     if name == "sdk":
         return UnitreeSdkDriver()
-    raise ValueError(f"Unbekannter Treiber: {name!r} (erwartet 'sim' oder 'sdk')")
+    if name == "twin":
+        # unitree_mujoco-DDS-Twin (Domain 1/lo); Twin muss laufen (siehe
+        # training/deploy/dds_twin_headless.py). Ganzkörper-LowCmd.
+        return DdsTwinDriver()
+    raise ValueError(f"Unbekannter Treiber: {name!r} (erwartet 'sim', 'sdk' oder 'twin')")
 
 
 def build_robot(driver: RobotDriverInterface) -> tuple[Robot, dict[str, PneumaticGripper]]:

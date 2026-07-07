@@ -755,3 +755,23 @@ folgen den Kommandos auch im Liegen (Kommando-Autorität bewiesen). Balance lief
 **Damit ist der Anwendungs-Steuerpfad frei:** h2_loader → LowCmd → Twin → LowState. Nächste Bausteine:
 RL-Lauf-Policy als LowCmd-Quelle einhängen (nach H2-Konvergenz; braucht Obs-aus-LowState-Bridge, ADR-0008),
 bzw. Lade-Sequenz/Arm-Manipulation gegen den Twin.
+
+### 2026-07-07 — v0.22.0 — DdsTwinDriver: h2_loader-App fährt den DDS-Twin
+
+Produktive Fassung des DDS-Steuerpfads als regulärer Treiber im `h2_loader`-Paket, damit die GESAMTE App
+(Orchestrator + Lade-Skills) gegen den Physik-Twin laufen kann.
+
+**Neu:** `src/h2_loader/hal/drivers/dds_twin_driver.py` — `DdsTwinDriver(RobotDriverInterface)`: Ganzkörper-
+LowCmd (unitree_hg, 31 Motoren) über DDS (Domain 1/lo). Hintergrund-Thread @200 Hz hält Beine/Taille/Kopf
+auf Stehpose (PD), Arme folgen `send_joints(arm, positions)`; `read_state` liest Arm-q aus `rt/lowstate`.
+Lazy SDK-Import (Modul ohne unitree_sdk2py importierbar → pytest unberührt). `app.py`: neuer `--driver twin`.
+Unterschied zu `UnitreeSdkDriver` (echte HW, arm-only via arm_sdk + Onboard-Balance): im Twin gibt's keinen
+Onboard-Regler → Ganzkörper nötig.
+
+**Verifiziert (Twin läuft via dds_twin_headless.py):** `connect()` + `send_joints("left",[0.5,0.3,0,0.8,…])`
+→ linker Arm trackt die Sollwerte (shoulder_pitch→0.5, roll→0.33, elbow→0.88), `read_state` liest sie
+zurück. **pytest 195/1 grün** (app.py-Änderung unkritisch). CPU-only, GPU-Training unberührt.
+
+**Damit:** die h2_loader-App ist über ihr Standard-`RobotDriverInterface` an den Twin angeschlossen
+(`--driver twin`). Balance (Beine) bleibt Aufgabe der RL-Policy (kippt sonst nach ~2 s, ADR-0008). Nächste
+Bausteine: Lade-Skill-Armposen (Teach-in) gegen den Twin; RL-Beinbefehle als LowCmd-Quelle nach Konvergenz.
