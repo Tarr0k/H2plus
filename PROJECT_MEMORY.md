@@ -710,3 +710,26 @@ dabei ungestört weiter** (Deploy nutzt On-Demand-Allocator im freien VRAM).
 **Nutzen:** exakt das Werkzeug für H2 fertig — nach Konvergenz `--env H2JoystickFlatTerrain --ckpt
 ~/h2_rl_runs/h2_full/best [--video ...]` → H2-Lauf messen + rendern. H2-Langlauf `h2full` läuft weiter
 (noch step-0-Baseline; Evals ~7,5 M Schritte getaktet). Stündlicher Cron-Check (a308c5d6) aktiv.
+
+### 2026-07-07 — DDS-Twin-Blocker gelöst (H2 ↔ unitree_mujoco über DDS)
+
+**Anwender:** „mach einfach weiter" → Anwendungs-Track. Der lange offene Blocker (Unitrees
+`simulate_python`-Bridge wirft bei H2 laufend `IndexError`) ist **gelöst** — Einzeiler.
+
+**Ursache:** `unitree_mujoco/simulate_python/unitree_sdk2py_bridge.py` wählt das DDS-IDL beim Import per
+`if config.ROBOT=="g1":` → unitree_hg (35 Motoren), sonst unitree_go (20). H2 (`config.ROBOT="h2"`) fiel in
+den else-Zweig → 20-Motoren-IDL, aber H2 hat 31 Aktuatoren → LowState-Publish-Thread `motor_state[i]`,
+i≥20 → IndexError-Dauerschleife.
+
+**Fix:** alle Unitree-Humanoiden aufs hg-IDL: `if config.ROBOT in ("g1","h1","h2"):`. Reproduzierbar als
+`scripts/patch_unitree_mujoco_h2.sh` (idempotent, sichert `*.orig`). Bridge liegt im Fremd-Repo
+`~/unitree_mujoco`, daher Patch-Skript statt Repo-Änderung.
+
+**Verifiziert auf ematalos (2026-07-07):** nach Patch startet die Bridge mit ROBOT="h2" **ohne IndexError**
+(0 statt Dauerschleife), gibt die H2-Szene aus, publiziert `rt/lowstate`; DDS-Client liest 35 Motor-Slots
+(31 aktiv) + IMU-Quaternion. Bridge läuft auf Domain 1, iface `lo`, via `~/H2plus/.venv` (unitree_sdk2py).
+Start decoupled: `sudo systemd-run --unit=ddsbridge ... DISPLAY=:2 .../unitree_mujoco.py`.
+
+**Damit frei:** `h2_loader` (unitree_sdk2py/`unitree_sdk_driver`) kann den H2 im Twin über DDS steuern
+(LowCmd senden, LowState lesen) — Basis für die Lade-Sequenz gegen einen Physik-Twin. Nächster Schritt:
+Regelschleife h2_loader→LowCmd→Twin (z. B. Haltepose/PD), dann Lade-Skill gegen den Twin.
