@@ -156,7 +156,8 @@ def build_env(env_name: str):
     return env, cfg
 
 
-def build_ppo_config(env_name: str, num_envs: int, num_timesteps: int) -> tuple[dict, Any]:
+def build_ppo_config(env_name: str, num_envs: int, num_timesteps: int,
+                     num_evals: Optional[int] = None) -> tuple[dict, Any]:
     """Baut die PPO-Kwargs (aus `locomotion_params`) + die Netzwerk-Factory.
 
     Nur `num_envs`, `batch_size` (daraus abgeleitet) und `num_timesteps` werden
@@ -196,6 +197,10 @@ def build_ppo_config(env_name: str, num_envs: int, num_timesteps: int) -> tuple[
     ppo_params["num_envs"] = num_envs
     ppo_params["batch_size"] = batch_size
     ppo_params["num_timesteps"] = num_timesteps
+    # Optional dichtere Evals fuers Monitoring (Default: G1-Wert, meist 20).
+    # Mehr Evals = haeufigere metrics.jsonl-Zeilen + Checkpoints, minimal mehr Overhead.
+    if num_evals is not None:
+        ppo_params["num_evals"] = num_evals
 
     return ppo_params, network_factory
 
@@ -360,6 +365,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                          "braucht vorher build_h2_mjx_model.py)")
     p.add_argument("--num-timesteps", type=int, default=100_000_000,
                     help="Gesamtzahl Trainings-Timesteps")
+    p.add_argument("--num-evals", type=int, default=None,
+                    help="Anzahl Evaluierungen ueber den Lauf (dichter = haeufigere metrics/Checkpoints; "
+                         "Default: Wert aus der Playground-Config, meist 20)")
     p.add_argument("--num-envs", type=int, default=2048,
                     help="Anzahl paralleler Envs (8 GB VRAM auf der M4000 -> klein halten)")
     p.add_argument("--out-dir", default=None,
@@ -390,7 +398,7 @@ def main(argv: Optional[list[str]] = None) -> None:
           f"num_timesteps={args.num_timesteps:,}  out_dir={out_dir}")
 
     env, cfg = build_env(args.env)
-    ppo_params, network_factory = build_ppo_config(args.env, args.num_envs, args.num_timesteps)
+    ppo_params, network_factory = build_ppo_config(args.env, args.num_envs, args.num_timesteps, args.num_evals)
 
     if args.env == H2_ENV_NAME:
         # H2 steht nicht in der Registry -- eigener Randomizer (siehe
