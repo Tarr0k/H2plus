@@ -34,12 +34,29 @@ import numpy as np
 
 ROOT_PATH = epath.Path(__file__).resolve().parent
 FEET_ONLY_FLAT_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_flat_terrain.xml"
+# Rough/Stairs analog G1 (_g1_reference/g1_constants.py: FEET_ONLY_ROUGH_TERRAIN_XML).
+# Beide werden -- wie die flache Szene -- von `build_h2_mjx_model.py` erzeugt (dort
+# entsteht auch der gemeinsame `home`-Keyframe, terraingleich, da Kinematik-basiert
+# und unabhaengig vom Boden). Zusaetzlich braucht es vorher einmalig die per
+# `make_hfields.py` erzeugten Hoehenfeld-PNGs unter `xmls/assets/` (siehe README.md).
+FEET_ONLY_ROUGH_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_rough_terrain.xml"
+FEET_ONLY_STAIRS_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_stairs.xml"
 
 
 def task_to_xml(task_name: str) -> epath.Path:
-  """Nur 'flat_terrain' verfuegbar (kein Rough-Terrain-Modell fuer H2 gebaut)."""
+  """'flat_terrain' (Standard), 'rough_terrain' und 'stairs' verfuegbar.
+
+  Rough/Stairs sind BLIND (keine Hoehenkarten-Beobachtung, siehe joystick.py-
+  Modul-Docstring) -- reine Boden-Variation, keine Env-Logik-Aenderung.
+  Solange `make_hfields.py` + der entsprechende Build-Lauf nicht ausgefuehrt
+  wurden, existieren die Dateien noch nicht; das Laden schlaegt dann mit einem
+  regulaeren "Datei nicht gefunden"-Fehler von MuJoCo fehl (kein Sonderfall
+  hier noetig).
+  """
   return {
       "flat_terrain": FEET_ONLY_FLAT_TERRAIN_XML,
+      "rough_terrain": FEET_ONLY_ROUGH_TERRAIN_XML,
+      "stairs": FEET_ONLY_STAIRS_XML,
   }[task_name]
 
 

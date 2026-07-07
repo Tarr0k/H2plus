@@ -18,6 +18,14 @@ H2-spezifischen Anpassungen:
   - `action_size` = 31 (alle H2-Gelenke werden geregelt, wie bei G1 alle 29).
   - `impl` defaultet auf "jax" statt "warp" (auf der Ziel-GPU M4000 verifiziert
     notwendig, siehe `training/rl/train_playground.py`).
+
+Terrain-Varianten (`task="flat_terrain"|"rough_terrain"|"stairs"`, siehe
+`h2_constants.task_to_xml` + `build_h2_mjx_model.py`): der `task`-Parameter
+unten waehlt NUR die Szene (Boden), die Env-Klasse selbst bleibt BLIND -- keine
+Hoehenkarten-/Terrain-Beobachtung, exakt wie G1s `G1JoystickRoughTerrain`.
+FOLGESCHRITT (noch NICHT implementiert): eine echte Perception-Erweiterung
+(z. B. ein lokales Hoehenkarten-Sample-Gitter um die Fuesse/den Torso in
+`_get_obs`) waere fuer zielgerichtetes Treppensteigen langfristig noetig.
 """
 
 from typing import Any, Dict, Optional, Union

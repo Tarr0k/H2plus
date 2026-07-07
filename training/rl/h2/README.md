@@ -13,6 +13,7 @@ Registry (H2 ist kein Erstanbieter-Env) -- Instanziierung erfolgt direkt.
 | `joystick.py` | `H2JoystickFlatTerrain`: Reward/Beobachtung/Reset/Step (Kern der Env) |
 | `randomize.py` | Domain-Randomization (Reibung, Masse, Armatur/Daempfung) |
 | `build_h2_mjx_model.py` | Baut aus der echten H2-MJCF das MJX-taugliche Modell (einmalig, auf ematalos) |
+| `make_hfields.py` | Erzeugt die Hoehenfeld-PNGs (`hfield_rough.png`/`hfield_stairs.png`) fuer die Terrain-Varianten, siehe unten |
 | `xmls/` | Wird von `build_h2_mjx_model.py` erzeugt (nicht Teil des Repos vor dem ersten Build) |
 
 ## 1) Modell bauen (einmalig, auf ematalos)
@@ -26,10 +27,18 @@ Erzeugt unter `training/rl/h2/xmls/`:
 - `h2_mjx_feetonly.xml` (MJX-taugliches Modell: Mesh-/Zylinder-Kollision aus,
   Fuss-Boxen als `left_foot`/`right_foot`, IMU-Sites auf `imu_in_pelvis`/
   `imu_in_torso` umbenannt, kompletter G1-Sensor-Block ergaenzt, `<position>`-
-  Aktuatoren). Das bereits vorhandene Boden-Geom `floor` bleibt unveraendert.
-- `scene_mjx_feetonly_flat_terrain.xml` (nur `home`-Keyframe + Kosmetik, KEINE
-  eigene Bodenebene -- die gibt es bereits im Robotermodell, siehe oben.
-  Keyframe-Werte per Vorwaerts-Kinematik berechnet, kein geschaetzter Wert)
+  Aktuatoren). Das im Quellmodell bereits vorhandene Boden-Geom `floor` wird
+  HIER entfernt (siehe `extract_and_remove_floor`) und stattdessen pro
+  Terrain-Szene neu angelegt (siehe naechster Punkt) -- fuer flat_terrain
+  1:1 rekonstruiert (keine Verhaltensaenderung), fuer rough/stairs durch ein
+  Hoehenfeld ersetzt. So teilen sich alle drei Szenen denselben Roboter-Include.
+- `scene_mjx_feetonly_flat_terrain.xml` / `scene_mjx_feetonly_rough_terrain.xml`
+  / `scene_mjx_feetonly_stairs.xml` (Kosmetik + Boden-Block je Terrain, siehe
+  `write_scene_xml`; identischer `home`-Keyframe in allen drei Dateien, per
+  Vorwaerts-Kinematik berechnet -- terrain-unabhaengig, kein geschaetzter Wert).
+  rough/stairs brauchen zusaetzlich `xmls/assets/hfield_rough.png` bzw.
+  `hfield_stairs.png` (siehe Abschnitt "Terrain-Varianten" unten) sowie eine
+  manuell kopierte `xmls/assets/rocky_texture.png`.
 - `sensor.xml` (Kontakt-"found"-Sensoren)
 
 Das Skript bricht mit Klartext-Fehler (+ Liste vorhandener Namen) ab, falls ein
@@ -48,6 +57,40 @@ Erwartung: `38 37 31 1`.
 Empfehlenswert: das Modell einmal im Viewer oeffnen und den `home`-Keyframe
 anschauen (`mujoco.viewer.launch(m, d)` nach `mujoco.mj_resetDataKeyframe`),
 um die berechnete Becken-Hoehe/Stehpose visuell zu pruefen.
+
+## Terrain-Varianten (rough_terrain / stairs)
+
+Analog G1 (`registry`-Eintraege `G1JoystickFlatTerrain`/`G1JoystickRoughTerrain`,
+hier stattdessen ueber den `task`-Parameter von `H2JoystickFlatTerrain`
+gesteuert, siehe `h2_constants.task_to_xml`). BLIND (keine Hoehenkarten-
+Beobachtung) -- reine Boden-Variation, keine Env-Logik-Aenderung; eine echte
+Hoehenkarten-Wahrnehmung waere ein spaeterer Ausbauschritt (siehe
+`joystick.py`-Modul-Docstring).
+
+```sh
+# 1) Hoehenfeld-PNGs erzeugen (nur numpy+Pillow, kein mujoco noetig):
+~/mjxenv/bin/python ~/H2plus/training/rl/h2/make_hfields.py
+# 2) Rocky-Textur MANUELL von der G1-Referenz kopieren (liegt im installierten
+#    mujoco_playground-Paket, nicht im Repo):
+cp <mujoco_playground-Installationspfad>/_src/locomotion/g1/xmls/assets/rocky_texture.png \
+   ~/H2plus/training/rl/h2/xmls/assets/rocky_texture.png
+# 3) Modell bauen (falls noch nicht geschehen, siehe Schritt 1 oben) -- schreibt
+#    dabei automatisch alle drei Szenen (flat/rough/stairs).
+# 4) Trainieren:
+python train_playground.py --env H2JoystickFlatTerrain --task rough_terrain --smoke
+python train_playground.py --env H2JoystickFlatTerrain --task stairs --smoke
+```
+
+**Wichtiger, noch UNVERIFIZIERTER Punkt** (siehe `make_hfields.py`-Docstring):
+ob Bild-Zeile/-Spalte 0 in MuJoCo tatsaechlich auf die von `make_hfields.py`
+angenommene Weltkoordinate faellt (fuer `stairs` wichtig, damit der Roboter
+VOR der ersten Stufe spawnt, nicht mitten auf/hinter der Treppe) -- unbedingt
+im Viewer gegenpruefen, ggf. `np.flipud`/`np.fliplr` in `make_stairs()` ergaenzen.
+Ausserdem treibt die Env den Roboter NICHT gezielt auf die Treppe zu (zufaellige
+Spawn-Rotation + zufaellige Kommandos wie bei flat_terrain) -- `stairs` ist
+aktuell eher ein "manchmal wird die Treppe erreicht"-Robustheitsszenario als
+echtes gerichtetes Treppensteigen-Training; fuer Letzteres braeuchte es
+zusaetzlich eine Zielpunkt-/Waypoint-Konditionierung (nicht Teil dieser Aenderung).
 
 ## 2) Env direkt instanziieren (ohne Registry)
 
@@ -130,8 +173,10 @@ ausschliesslich `self.get_actuator_qpos/-qvel/-qacc(data)` statt
    aller Referenzen, auch der 101 bereits vorhandenen H2-Sensoren -- siehe
    `rename_site_everywhere`). Bricht ab, falls die Original-Namen fehlen.
 4. **Boden-Geom `floor`**: existiert laut Team-Notiz bereits (type plane,
-   contype=1) und wird UNVERAENDERT wiederverwendet -- Skript prueft nur
-   dessen Existenz, legt KEINE zweite Bodenebene an (das gaebe einen
+   contype=1). Skript prueft dessen Existenz, LOEST es dann aus dem Roboter-
+   XML heraus (`extract_and_remove_floor`) und legt es JE TERRAIN-SZENE neu an
+   (fuer flat_terrain unveraendert rekonstruiert, siehe "Terrain-Varianten"
+   oben) -- KEINE zweite Bodenebene im selben Include (das gaebe einen
    "repeated name"-Fehler beim Kompilieren).
 5. **Sensor-Frame-Suffixe** (`upvector_pelvis`/`upvector_torso` etc.): werden
    vom Build-Skript selbst angelegt (Site `imu_in_pelvis` -> Suffix `pelvis`,
@@ -146,3 +191,14 @@ ausschliesslich `self.get_actuator_qpos/-qvel/-qacc(data)` statt
    `<position>`-Aktuatoren unbegrenzt (`inheritrange="1"` beschraenkt nur die
    Soll-Position, nicht die Kraft) -- bei Bedarf reale Motor-Drehmomentgrenzen
    nachtragen.
+8. **Terrain-Varianten** (siehe Abschnitt oben, NEU): `make_hfields.py` wurde
+   lokal (nur numpy/Pillow, ohne mujoco) gegen die reine Bild-Erzeugungslogik
+   getestet (Graustufen-Profil der Treppe stimmt: 6 Stufen sichtbar, Werte
+   0/42/85/127/170/212/255 symmetrisch rauf/runter) -- NICHT getestet ist die
+   MuJoCo-seitige Zeile/Spalte-zu-Weltkoordinate-Zuordnung des `<hfield>` (ob
+   der Roboter beim Spawn tatsaechlich VOR der ersten Stufe steht). Ausserdem
+   `naconmax`/`njmax` in `joystick.py::default_config()` wurden fuer flat_terrain
+   dimensioniert (3 explizite Fuss-Pairs) -- ob Box-gegen-Hoehenfeld-Kollision
+   (rough/stairs) mehr Kontaktpunkte pro Pair erzeugt und die Limits erhoeht
+   werden muessen, ist auf ematalos gegenzupruefen (Compile-Fehler/Warnung bei
+   Kontakt-Ueberlauf waeren das Signal).

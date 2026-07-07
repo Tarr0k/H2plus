@@ -32,11 +32,18 @@ Was das Skript macht (in dieser Reihenfolge):
          Site an derselben Position wird hinzugefuegt (H2 hat dafuer noch keine
          Sites).
        - <contact><pair>-Eintraege links/rechts-Fuss<->Boden (gegen das bereits
-         vorhandene Boden-Geom "floor", siehe Team-Notiz -- wird NICHT neu
-         angelegt) sowie links<->rechts (Selbstkollision) -- exakt das G1-
-         Muster, das NICHT auf contype/conaffinity-Breitband-Filterung
-         angewiesen ist, sondern Kontaktpaare explizit deklariert (robust
-         unabhaengig vom Ausgangswert von contype/conaffinity).
+         vorhandene Boden-Geom "floor", siehe Team-Notiz) sowie links<->rechts
+         (Selbstkollision) -- exakt das G1-Muster, das NICHT auf contype/
+         conaffinity-Breitband-Filterung angewiesen ist, sondern Kontaktpaare
+         explizit deklariert (robust unabhaengig vom Ausgangswert von
+         contype/conaffinity).
+       - Das Boden-Geom "floor" selbst wird HIER aus dem Roboter-XML entfernt
+         (siehe `extract_and_remove_floor`) und stattdessen JE TERRAIN-SZENE
+         (flat/rough/stairs) neu angelegt (siehe Schritt 4/`write_scene_xml`)
+         -- fuer flat_terrain 1:1 aus den Original-Attributen rekonstruiert
+         (keine Verhaltensaenderung), fuer rough/stairs durch ein Hoehenfeld
+         ersetzt. Grund: alle drei Varianten sollen denselben Roboter-Include
+         nutzen, brauchen aber unterschiedliche Boeden.
        - Kompletter <actuator>-Neuaufbau als <position>-Aktuatoren (das
          Quellmodell nutzt <motor>, siehe deploy_h2_g1policy.py, das `d.ctrl`
          manuell per PD-Regler befuellt -- fuer die MJX-Policy brauchen wir wie
@@ -50,15 +57,22 @@ Was das Skript macht (in dieser Reihenfolge):
          "torso"-Frame, plus Fuss-Kraft-/Geschwindigkeitssensoren) wird IN DEN
          BESTEHENDEN <sensor>-Block ERGAENZT -- die 101 bereits vorhandenen
          H2-Sensoren (Team-Notiz) bleiben unangetastet.
-  4. Schreibt `sensor.xml` (Kontakt-"found"-Sensoren, analog G1) sowie eine
-     Szenen-Datei OHNE eigene Bodenebene (die gibt es bereits, siehe oben) mit
-     `<include>` der beiden Dateien.
+  4. Schreibt `sensor.xml` (Kontakt-"found"-Sensoren, analog G1) sowie DREI
+     Szenen-Dateien (flat_terrain/rough_terrain/stairs, siehe `TERRAINS`),
+     jede mit `<include>` von Robotermodell + `sensor.xml`, aber eigenem
+     Boden-Block (siehe `write_scene_xml`/`_floor_block_xml`).
   5. Bestimmt die "home"-Keyframe-Werte NICHT durch Schaetzen, sondern per
      FORWARD-KINEMATIK (siehe `compute_home_qpos`): Beine auf die von der
      Team-Notiz vorgegebene Stehpose, danach wird das Becken exakt so hoch
      gesetzt, dass beide Fuss-Sohlen den Boden beruehren (+5 mm Clearance).
-  6. Laedt das fertige Szenen-XML zur Kontrolle noch einmal komplett (Smoke-
-     Test: kompiliert es ueberhaupt?) und gibt nq/nv/nu/nkey aus.
+     Terrain-unabhaengig (der Boden spielt fuer diese Kinematik keine Rolle)
+     -- DERSELBE Keyframe landet in allen drei Szenen-Dateien.
+  6. Laedt flat_terrain zur Kontrolle noch einmal komplett (Smoke-Test:
+     kompiliert es ueberhaupt?) und gibt nq/nv/nu/nkey aus -- verbindlich.
+     rough_terrain/stairs werden ebenfalls geladen, aber nur BEST-EFFORT
+     (Warnung statt Abbruch): ihnen fehlen direkt nach diesem Lauf i.d.R.
+     noch die per `make_hfields.py` erzeugten Hoehenfeld-PNGs sowie die
+     manuell zu kopierende `assets/rocky_texture.png` (siehe README.md).
 
 WICHTIG -- vor dem ersten Training auf ematalos zu verifizieren (Skript bricht
 bei 2./3. selbststaendig mit Klartext-Fehler ab, falls falsch geraten):
@@ -68,8 +82,9 @@ bei 2./3. selbststaendig mit Klartext-Fehler ab, falls falsch geraten):
     haengt.
   - Dass die Original-Sites "imu" und "secondary_imu" existieren (werden beim
     Bauen auf "imu_in_pelvis"/"imu_in_torso" umbenannt).
-  - Dass ein Boden-Geom "floor" existiert (wird wiederverwendet, nicht neu
-    angelegt).
+  - Dass ein Boden-Geom "floor" existiert (dessen Original-Attribute werden
+    fuer flat_terrain wiederverwendet, siehe `extract_and_remove_floor`; fuer
+    rough_terrain/stairs durch ein Hoehenfeld ersetzt).
 Ausserdem NICHT automatisch geprueft, aber wichtig gegenzulesen:
   - Ob `<option>` (Timestep/Solver) der Quell-Datei sinnvoll ist -- dieses
     Skript FASST `<option>` BEWUSST NICHT AN (das Team hat mit den Original-
@@ -144,6 +159,28 @@ MJX_UNSUPPORTED_TYPES = {"mesh", "cylinder", "ellipsoid"}
 # umbenannt -- siehe `rename_site_everywhere`.
 SOURCE_PELVIS_IMU_SITE = "imu"
 SOURCE_TORSO_IMU_SITE = "secondary_imu"
+
+# --- Terrain-Varianten (flat/rough/stairs) ----------------------------------
+# Das Boden-Geom "floor" steckt im H2-Quellmodell bereits IM Roboter-Teil
+# (Team-Notiz). Damit rough_terrain/stairs einen ANDEREN Boden bekommen
+# koennen, ohne den Roboter-Include zu verdoppeln, wird "floor" HIER aus dem
+# Roboter-XML herausgeloest (siehe `extract_and_remove_floor`) und stattdessen
+# JE SZENE neu angelegt (siehe `write_scene_xml`) -- exakt das G1-Muster, wo
+# der Boden ebenfalls nie Teil von `g1_mjx_feetonly.xml` ist, sondern jeder
+# `scene_mjx_feetonly_*.xml` einzeln (vgl. `_g1_reference/xmls/
+# scene_mjx_feetonly_rough_terrain.xml`). Fuer "flat_terrain" ist das eine
+# reine Verlagerung OHNE Verhaltensaenderung (die Original-Attribute werden
+# 1:1 rekonstruiert).
+TERRAINS = ("flat_terrain", "rough_terrain", "stairs")
+
+# Hoehenfeld-Groessen als MuJoCo-<hfield>-`size`-Attribut ("radius_x radius_y
+# elevation_z base_z", Meter). `elevation_z` ist die Hoehe, der Graustufe 255
+# im PNG entspricht -- MUSS mit den `*_MAX_HEIGHT_M`-Konstanten in
+# `make_hfields.py` uebereinstimmen (keine automatische Kopplung, siehe
+# dortiger Modul-Docstring!). `radius_x`/`radius_y` (hier 10 10, wie G1)
+# muessen ebenfalls mit `make_hfields.py::HFIELD_HALF_EXTENT_M` uebereinstimmen.
+HFIELD_ROUGH_SIZE = "10 10 0.06 1.0"
+HFIELD_STAIRS_SIZE = "10 10 0.90 1.0"
 
 
 # --------------------------------------------------------------------------- #
@@ -364,6 +401,44 @@ def rename_site_everywhere(root: ET.Element, old_name: str, new_name: str) -> No
       elem.set("objname", new_name)
 
 
+def _find_parent(root: ET.Element, target: ET.Element) -> Optional[ET.Element]:
+  """`xml.etree.ElementTree` kennt keine Eltern-Referenz -- lineare Suche."""
+  for parent in root.iter():
+    for child in parent:
+      if child is target:
+        return parent
+  return None
+
+
+def extract_and_remove_floor(root: ET.Element) -> Dict[str, str]:
+  """Loest das (im H2-Quellmodell bereits vorhandene) Boden-Geom 'floor' aus
+  dem Roboter-XML heraus und liefert seine Original-Attribute zurueck.
+
+  Grund (siehe Modul-Konstante `TERRAINS` oben): rough_terrain/stairs
+  brauchen einen ANDEREN Boden als flat_terrain, aber alle drei sollen
+  denselben `h2_mjx_feetonly.xml`-Include nutzen -- der Boden darf deshalb
+  nicht mehr Teil dieser gemeinsamen Datei sein, sondern wird JE SZENE in
+  `write_scene_xml` neu angelegt. Fuer flat_terrain aus den hier gesicherten
+  Attributen 1:1 rekonstruiert (reine Verlagerung, keine Verhaltensaenderung).
+  """
+  floor = None
+  for geom in root.iter("geom"):
+    if geom.get("name") == "floor":
+      floor = geom
+      break
+  if floor is None:
+    raise SystemExit(
+        "[FEHLER] Boden-Geom 'floor' in der abgeflachten XML nicht gefunden "
+        "(sollte durch verify_and_introspect() bereits sichergestellt sein)."
+    )
+  parent = _find_parent(root, floor)
+  if parent is None:
+    raise SystemExit("[FEHLER] Eltern-Element von Boden-Geom 'floor' nicht gefunden.")
+  attrs = dict(floor.attrib)
+  parent.remove(floor)
+  return attrs
+
+
 def add_feet_sites_and_pairs(root: ET.Element, foot_geom_info: Dict) -> None:
   """Benennt die (bereits vorhandene) Sohlen-Box je Seite in 'left_foot'/
   'right_foot' um, fuegt je eine Site an derselben Stelle hinzu und deklariert
@@ -546,16 +621,76 @@ def compute_home_qpos(built_scene_path: Path, actuator_joint: Dict[str, str]):
   return qpos, ctrl_by_actuator
 
 
-def write_scene_xml(out_dir: Path, robot_xml_name: str, keyframe=None) -> Path:
-  """Szenen-Wrapper um `h2_mjx_feetonly.xml`.
+_SCENE_FILENAMES = {
+    "flat_terrain": "scene_mjx_feetonly_flat_terrain.xml",
+    "rough_terrain": "scene_mjx_feetonly_rough_terrain.xml",
+    "stairs": "scene_mjx_feetonly_stairs.xml",
+}
 
-  ABWEICHUNG von G1s Szenendatei (die eine eigene Bodenebene + Groundplane-
-  Textur anlegt): das H2-Quellmodell hat bereits ein Boden-Geom namens "floor"
-  (Team-Notiz, in `h2_mjx_feetonly.xml` via `<include>` enthalten) -- eine
-  zweite Bodenebene mit demselben Namen wuerde beim Kompilieren einen
-  "repeated name"-Fehler ausloesen. Deshalb hier bewusst KEIN eigenes
-  <worldbody>/<asset> mit Boden/Textur, nur Kamera-/Anzeige-Kosmetik.
+
+def _floor_block_xml(terrain: str, floor_attrs: Dict[str, str]) -> tuple:
+  """Baut (asset_xml, floor_geom_xml) fuer die gegebene Terrain-Variante.
+
+  - "flat_terrain": das URSPRUENGLICHE Boden-Geom (siehe
+    `extract_and_remove_floor`) wird HIER 1:1 aus `floor_attrs` rekonstruiert
+    -- reine Verlagerung Roboter-XML -> Szenen-XML, keine Verhaltensaenderung.
+    Kein zusaetzliches <asset> noetig, falls das Original ueber `material`
+    bereits auf ein Asset im (unveraendert mitgelieferten) Roboter-<asset>
+    verweist.
+  - "rough_terrain"/"stairs": neues Hoehenfeld-Geom (weiterhin "floor"
+    genannt -- die expliziten Fuss-<pair>-Eintraege und Kontakt-Sensoren in
+    `h2_mjx_feetonly.xml` referenzieren diesen Namen fest, siehe
+    `add_feet_sites_and_pairs`/`write_sensor_xml`). Rocky-Textur analog G1
+    (`_g1_reference/xmls/scene_mjx_feetonly_rough_terrain.xml`); die Datei
+    `assets/rocky_texture.png` muss VORHER manuell von dort nach
+    `xmls/assets/` kopiert werden (siehe README.md -- hier nicht automatisch
+    moeglich, das Original liegt im installierten mujoco_playground-Paket).
+    Kollisions-technisch macht das WIE das Boden-Geom genau aussieht ohnehin
+    keinen Unterschied: die eigentlichen Fuss<->Boden-Kontakte laufen ueber
+    die expliziten <pair>-Eintraege, nicht ueber contype/conaffinity.
   """
+  if terrain == "flat_terrain":
+    attrs_xml = " ".join(f'{k}="{v}"' for k, v in floor_attrs.items())
+    return "", f"    <geom {attrs_xml}/>"
+
+  hfield_file = "hfield_rough.png" if terrain == "rough_terrain" else "hfield_stairs.png"
+  hfield_size = HFIELD_ROUGH_SIZE if terrain == "rough_terrain" else HFIELD_STAIRS_SIZE
+  asset_xml = f"""
+  <asset>
+    <!-- Textur wie G1-Referenz (siehe _g1_reference/xmls/scene_mjx_feetonly_rough_terrain.xml,
+         Quelle dort: https://polyhaven.com/a/rock_face) -- Datei manuell nach
+         xmls/assets/rocky_texture.png kopieren (siehe README.md). -->
+    <texture type="2d" name="terrain_rocky" file="assets/rocky_texture.png"/>
+    <material name="terrain_rocky" texture="terrain_rocky" texuniform="true" texrepeat="5 5" reflectance=".8"/>
+    <hfield name="hfield" file="assets/{hfield_file}" size="{hfield_size}"/>
+  </asset>"""
+  # Eigener Material-/Texturname (NICHT "groundplane"): das Roboter-XML
+  # (h2_mjx_feetonly.xml) enthaelt bereits eine "groundplane"-Textur/-Material
+  # fuers flache Terrain -> gleicher Name = "repeated name 'groundplane'".
+  floor_xml = '    <geom name="floor" type="hfield" hfield="hfield" material="terrain_rocky"/>'
+  return asset_xml, floor_xml
+
+
+def write_scene_xml(
+    out_dir: Path,
+    robot_xml_name: str,
+    floor_attrs: Dict[str, str],
+    terrain: str = "flat_terrain",
+    keyframe=None,
+) -> Path:
+  """Szenen-Wrapper um `h2_mjx_feetonly.xml`, JE Terrain-Variante (siehe
+  Modul-Konstante `TERRAINS` oben und `_floor_block_xml` fuer den Boden-Teil).
+
+  ABWEICHUNG von einer frueheren Fassung dieses Skripts: der Boden ("floor")
+  ist NICHT MEHR Teil von `h2_mjx_feetonly.xml` (siehe
+  `extract_and_remove_floor`), sondern wird HIER JE SZENE neu angelegt --
+  noetig, damit rough_terrain/stairs einen anderen Boden haben koennen als
+  flat_terrain, obwohl alle drei denselben Roboter-Include nutzen.
+  """
+  if terrain not in TERRAINS:
+    raise ValueError(f"Unbekannte Terrain-Variante {terrain!r} (erlaubt: {TERRAINS})")
+  asset_xml, floor_geom_xml = _floor_block_xml(terrain, floor_attrs)
+
   keyframe_xml = ""
   if keyframe is not None:
     qpos, ctrl = keyframe
@@ -568,7 +703,7 @@ def write_scene_xml(out_dir: Path, robot_xml_name: str, keyframe=None) -> Path:
       ctrl="{ctrl_str}"/>
   </keyframe>
 """
-  xml = f"""<mujoco model="h2 scene">
+  xml = f"""<mujoco model="h2 scene ({terrain})">
   <include file="{robot_xml_name}"/>
 
   <statistic center="0 0 0.9" extent="1.5" meansize="0.05"/>
@@ -581,11 +716,16 @@ def write_scene_xml(out_dir: Path, robot_xml_name: str, keyframe=None) -> Path:
     <scale forcewidth="0.3" contactwidth="0.5" contactheight="0.2"/>
     <quality shadowsize="8192"/>
   </visual>
+{asset_xml}
+
+  <worldbody>
+{floor_geom_xml}
+  </worldbody>
 
   <include file="sensor.xml"/>
 {keyframe_xml}</mujoco>
 """
-  scene_path = out_dir / "scene_mjx_feetonly_flat_terrain.xml"
+  scene_path = out_dir / _SCENE_FILENAMES[terrain]
   scene_path.write_text(xml, encoding="utf-8")
   return scene_path
 
@@ -636,8 +776,15 @@ def main() -> None:
     print(f"[build] {n_disabled} Mesh-/Zylinder-/Ellipsoid-Geoms auf contype=conaffinity=0 gesetzt.")
 
     # Team-Notiz: Boden-Geom heisst im Original bereits "floor" (type plane,
-    # contype=1) -- WIRD WIEDERVERWENDET, nicht neu angelegt (siehe
-    # write_scene_xml: keine eigene Bodenebene mehr dort).
+    # contype=1). WIRD WIEDERVERWENDET (keine neuen Attribute erfunden), aber
+    # NICHT MEHR hier im Roboter-XML belassen -- siehe `extract_and_remove_floor`:
+    # der Boden wird herausgeloest und JE SZENE (flat/rough/stairs) in
+    # `write_scene_xml` neu angelegt, damit Terrain-Varianten einen anderen
+    # Boden haben koennen, obwohl sie denselben Roboter-Include nutzen.
+    floor_attrs = extract_and_remove_floor(root)
+    print(f"[build] Boden-Geom 'floor' aus Roboter-XML geloest (Original-Attribute: {floor_attrs}) "
+          "-- wird jetzt pro Terrain-Szene einzeln angelegt (siehe write_scene_xml).")
+
     rename_site_everywhere(root, SOURCE_PELVIS_IMU_SITE, consts.PELVIS_IMU_SITE)
     rename_site_everywhere(root, SOURCE_TORSO_IMU_SITE, consts.TORSO_IMU_SITE)
 
@@ -657,19 +804,45 @@ def main() -> None:
 
   write_sensor_xml(out_dir)
 
-  # Erst OHNE Keyframe schreiben, um per echter Kinematik die Becken-Hoehe zu
-  # bestimmen (compute_home_qpos braucht ein ladbares, vollstaendiges Modell).
-  draft_scene_path = write_scene_xml(out_dir, robot_xml_name, keyframe=None)
+  # Erst OHNE Keyframe schreiben (flat_terrain als Entwurf), um per echter
+  # Kinematik die Becken-Hoehe zu bestimmen (compute_home_qpos braucht ein
+  # ladbares, vollstaendiges Modell -- der Boden selbst spielt fuer die
+  # Kinematik keine Rolle, deshalb genuegt hierfuer flat_terrain als Entwurf).
+  draft_scene_path = write_scene_xml(out_dir, robot_xml_name, floor_attrs, terrain="flat_terrain", keyframe=None)
   print("[build] berechne Keyframe 'home' per Vorwaerts-Kinematik...")
   qpos, ctrl = compute_home_qpos(draft_scene_path, info["actuator_joint"])
-  write_scene_xml(out_dir, robot_xml_name, keyframe=(qpos, ctrl))
 
-  print("[build] Smoke-Test: finales Modell laden...")
-  final_model = mujoco.MjModel.from_xml_path(str(draft_scene_path))
+  # DERSELBE Keyframe (terrain-unabhaengig, siehe oben) fuer alle drei
+  # Varianten -- nur der Boden unterscheidet sich (siehe `_floor_block_xml`).
+  scene_paths = {}
+  for terrain in TERRAINS:
+    scene_paths[terrain] = write_scene_xml(
+        out_dir, robot_xml_name, floor_attrs, terrain=terrain, keyframe=(qpos, ctrl)
+    )
+    print(f"[build] Szene geschrieben: {scene_paths[terrain]}")
+
+  print("[build] Smoke-Test: flat_terrain laden (verbindlich)...")
+  final_model = mujoco.MjModel.from_xml_path(str(scene_paths["flat_terrain"]))
   print(
       f"[build] OK -- nq={final_model.nq} nv={final_model.nv} nu={final_model.nu} "
       f"nkey={final_model.nkey}"
   )
+
+  # rough_terrain/stairs brauchen zusaetzlich die per make_hfields.py erzeugten
+  # Hoehenfeld-PNGs sowie (manuell kopiert) assets/rocky_texture.png (siehe
+  # README.md) -- beides existiert direkt nach diesem Build-Lauf i.d.R. noch
+  # NICHT. Deshalb hier nur ein BEST-EFFORT-Smoke-Test (Warnung statt Abbruch),
+  # damit ein noch fehlendes Asset nicht den gesamten Build-Lauf scheitern laesst.
+  for terrain in ("rough_terrain", "stairs"):
+    try:
+      terrain_model = mujoco.MjModel.from_xml_path(str(scene_paths[terrain]))
+      print(f"[build] Smoke-Test {terrain}: OK -- nq={terrain_model.nq} nv={terrain_model.nv} "
+            f"nu={terrain_model.nu} nkey={terrain_model.nkey}")
+    except Exception as exc:  # laeuft nur best-effort, siehe Kommentar oben
+      print(f"[build] Smoke-Test {terrain} (noch) fehlgeschlagen ({exc}) -- "
+            "vermutlich fehlen noch die Hoehenfeld-/Textur-Assets, siehe README.md "
+            "(make_hfields.py ausfuehren + rocky_texture.png von der G1-Referenz kopieren).")
+
   print(f"[build] fertig. Ergebnis unter: {out_dir}")
 
 

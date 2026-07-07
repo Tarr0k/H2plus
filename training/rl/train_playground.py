@@ -25,6 +25,11 @@ Aufruf (Beispiele):
     # Unterbrochenen Lauf fortsetzen
     python train_playground.py --env G1JoystickFlatTerrain --resume
 
+    # H2 auf Terrain-Variante trainieren (--task nur fuer H2 wirksam, siehe
+    # training/rl/h2/README.md, Abschnitt "Terrain-Varianten" -- braucht
+    # vorher make_hfields.py + einen erneuten build_h2_mjx_model.py-Lauf):
+    python train_playground.py --env H2JoystickFlatTerrain --task stairs --smoke
+
 Ausgabe-Layout unter `--out-dir` (Default `~/h2_rl_runs/<env>_<seed>`):
     metrics.jsonl        -- eine JSON-Zeile pro Eval (Schritt, Reward, steps/s, ...)
     ckpt_<step>/         -- periodische Zwischen-Checkpoints (Policy-Parameter)
@@ -137,18 +142,23 @@ def _import_h2():
     return h2
 
 
-def build_env(env_name: str):
+def build_env(env_name: str, task: str = "flat_terrain"):
     """Laedt ein Env und erzwingt `impl="jax"`.
 
     KRITISCH (verifiziert): Der Playground-Default `impl="warp"` stuerzt auf der
     Quadro M4000 (Compute 5.2) ab. Ohne dieses Erzwingen crasht das Training
     sofort beim ersten Env-Reset -- daher hier zentral und nicht optional.
+
+    `task` waehlt bei H2 die Terrain-Variante (siehe `h2_constants.task_to_xml`:
+    "flat_terrain"/"rough_terrain"/"stairs") -- fuer G1-Registry-Envs OHNE
+    Wirkung, da dort jede Terrain-Variante ein EIGENER Registry-Eintrag ist
+    (z. B. "G1JoystickRoughTerrain"), kein Konstruktor-Parameter.
     """
     if env_name == H2_ENV_NAME:
         h2 = _import_h2()
         cfg = h2.default_config()
         cfg.impl = "jax"
-        env = h2.H2JoystickFlatTerrain(config=cfg)
+        env = h2.H2JoystickFlatTerrain(task=task, config=cfg)
         return env, cfg
     cfg = registry.get_default_config(env_name)
     cfg.impl = "jax"
@@ -363,6 +373,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                     help="Env-Name: ein Playground-Registry-Name (registry.load) ODER "
                          f"'{H2_ENV_NAME}' (direkte Instanziierung, siehe training/rl/h2/README.md; "
                          "braucht vorher build_h2_mjx_model.py)")
+    p.add_argument("--task", default="flat_terrain",
+                    choices=["flat_terrain", "rough_terrain", "stairs"],
+                    help="Terrain-Variante, nur wirksam fuer --env "
+                         f"{H2_ENV_NAME} (siehe h2_constants.task_to_xml; braucht "
+                         "vorher make_hfields.py + build_h2_mjx_model.py fuer rough_terrain/stairs); "
+                         "fuer G1-Registry-Envs ohne Wirkung (siehe build_env)")
     p.add_argument("--num-timesteps", type=int, default=100_000_000,
                     help="Gesamtzahl Trainings-Timesteps")
     p.add_argument("--num-evals", type=int, default=None,
@@ -394,10 +410,10 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[setup] env={args.env}  seed={args.seed}  num_envs={args.num_envs}  "
+    print(f"[setup] env={args.env}  task={args.task}  seed={args.seed}  num_envs={args.num_envs}  "
           f"num_timesteps={args.num_timesteps:,}  out_dir={out_dir}")
 
-    env, cfg = build_env(args.env)
+    env, cfg = build_env(args.env, args.task)
     ppo_params, network_factory = build_ppo_config(args.env, args.num_envs, args.num_timesteps, args.num_evals)
 
     if args.env == H2_ENV_NAME:
@@ -508,6 +524,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     env_meta = {
         "env_name": args.env,
+        "task": args.task,
         "seed": args.seed,
         "num_envs": args.num_envs,
         "num_timesteps": args.num_timesteps,
