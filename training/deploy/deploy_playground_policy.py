@@ -168,6 +168,34 @@ def _render_video(env, qpos_traj, out_path: Path, height=480, width=640, fps=50)
     return out_path
 
 
+def _play_viewer(env, qpos_traj, fps: int = 50) -> None:
+    """Spielt die qpos-Trajektorie live im MuJoCo-Fenster ab (Endlosschleife).
+
+    Nutzt den passiven C-MuJoCo-Viewer (`mujoco.viewer.launch_passive`) auf dem
+    aktuellen X-Display (in der VNC-Session $DISPLAY=:2). Es wird KEINE Physik
+    gerechnet -- nur die vorab berechnete Pose je Frame gesetzt und gerendert;
+    daher echtzeitfaehig und GPU-schonend (Rendern via VirtualGL).
+    """
+    import time as _time
+
+    import mujoco
+    import mujoco.viewer
+
+    mj_model = env.mj_model
+    mj_data = mujoco.MjData(mj_model)
+    dt = 1.0 / fps
+    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+        print("[deploy] Viewer offen -- G1-Lauf laeuft in Endlosschleife (Fenster schliessen zum Beenden)")
+        while viewer.is_running():
+            for qpos in qpos_traj:
+                if not viewer.is_running():
+                    break
+                mj_data.qpos[:] = qpos
+                mujoco.mj_forward(mj_model, mj_data)
+                viewer.sync()
+                _time.sleep(dt)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Trainierte Playground/Brax-Policy im Env ausfuehren")
     ap.add_argument("--env", required=True, help="G1JoystickFlatTerrain oder H2JoystickFlatTerrain")
@@ -175,6 +203,11 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=500, help="Rollout-Schritte (50 Hz -> 500 = 10 s)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--video", type=Path, default=None, help="optional: MP4-Ausgabepfad (braucht GPU/EGL)")
+    ap.add_argument("--viewer", action="store_true",
+                    help="Live-Fenster: Rollout in Endlosschleife im MuJoCo-Viewer abspielen (VNC $DISPLAY)")
+    ap.add_argument("--save-traj", type=Path, default=None,
+                    help="Zielordner: speichert traj.npy (qpos) + model.mjb fuer den entkoppelten "
+                         "Viewer play_traj.py (JAX/GPU-Rollout und VirtualGL-Rendern getrennt).")
     args = ap.parse_args()
 
     ckpt = args.ckpt.expanduser()
@@ -198,6 +231,20 @@ def main() -> None:
     print(f"  Schritte gelaufen   : {ep_len}" + (f" (Episode-Ende/Sturz bei {done_at})" if done_at else " (kein Sturz)"))
     print(f"  Strecke x           : {x_dist:+.3f} m")
     print(f"  End-Becken-Hoehe z  : {float(qpos_traj[-1][2]):.3f} m")
+
+    if args.save_traj is not None:
+        import mujoco  # lokal
+        out = args.save_traj.expanduser()
+        out.mkdir(parents=True, exist_ok=True)
+        np.save(str(out / "traj.npy"), np.asarray(qpos_traj))
+        mujoco.mj_saveModel(env.mj_model, str(out / "model.mjb"), None)
+        print(f"[deploy] Trajektorie + Modell gespeichert: {out}/traj.npy, {out}/model.mjb "
+              f"({len(qpos_traj)} Frames) -> abspielen mit play_traj.py (unter vglrun)")
+
+    if args.viewer:
+        print("[deploy] starte Live-Viewer ...")
+        _play_viewer(env, qpos_traj)
+        return
 
     if args.video is not None:
         print(f"[deploy] rendere Video -> {args.video} ...")
