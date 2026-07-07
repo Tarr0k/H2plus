@@ -775,3 +775,16 @@ zurück. **pytest 195/1 grün** (app.py-Änderung unkritisch). CPU-only, GPU-Tra
 **Damit:** die h2_loader-App ist über ihr Standard-`RobotDriverInterface` an den Twin angeschlossen
 (`--driver twin`). Balance (Beine) bleibt Aufgabe der RL-Policy (kippt sonst nach ~2 s, ADR-0008). Nächste
 Bausteine: Lade-Skill-Armposen (Teach-in) gegen den Twin; RL-Beinbefehle als LowCmd-Quelle nach Konvergenz.
+
+### 2026-07-07 — FIX: H2-MJX-Training hing 2h im XLA-Compile (Broad-Phase-Kontakte)
+
+**Problem:** h2full blieb bei step-0 hängen — Diagnose: Prozess CPU 104% (=XLA-Compile, einkernig), GPU-Mem
+belegt aber keine Trainings-Schritte, >2h. Ursache: Das H2-feetonly-Modell hatte zwar explizite <pair>-
+Fuss-Kontakte, ABER die 14 Fuss-Kontaktkugeln/Fuss standen noch auf contype=1 → MJX-Broad-Phase enumeriert
+sie alle → riesiger XLA-Graph → Trainings-Step-Compile explodiert (G1 kompiliert in ~10min).
+
+**Fix (`build_h2_mjx_model.py::disable_all_broadphase`):** contype=conaffinity=0 auf ALLEN Geoms (G1-Muster,
+vgl. g1_mjx_feetonly.xml <default> contype=0) → Kollision NUR über die 3 expliziten <pair> (L/R-Fuss↔Boden,
+Fuss↔Fuss). **Verifiziert:** put_model 0,4s, Step-Compile 28s (statt >2h Hängen), **32,2k steps/s** roh
+(vs. 12k mit Kugeln). H2-Training neu gestartet als `h2_full3` (num_evals 60). PPO-Compile jetzt Minuten,
+Durchsatz deutlich höher → erste echte Lernpunkte in Minuten erwartet.

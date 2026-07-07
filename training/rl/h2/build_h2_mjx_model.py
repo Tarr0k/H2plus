@@ -298,6 +298,24 @@ def disable_unsupported_collisions(root: ET.Element) -> int:
   return count
 
 
+def disable_all_broadphase(root: ET.Element) -> int:
+  """Setzt contype=conaffinity=0 auf ALLEN Geoms -> Kollision laeuft NUR noch
+  ueber die expliziten <pair>-Kontakte (G1-Muster, siehe g1_mjx_feetonly.xml
+  <default> contype=0). Sonst enumeriert die MJX-Broad-Phase auch die vielen
+  Fuss-Kontaktkugeln (14/Fuss) -> riesiger XLA-Graph -> Compile dauert Stunden
+  (verifiziert: >2 h haengengeblieben). Mit nur den 3 Fuss<->Boden/Fuss-Pairs
+  kompiliert das Trainings-Step in Minuten und laeuft deutlich schneller.
+  Wirkt NICHT auf die <pair>-Eintraege (die kollidieren explizit, unabhaengig
+  von contype/conaffinity)."""
+  count = 0
+  for geom in root.iter("geom"):
+    if geom.get("contype") != "0" or geom.get("conaffinity") != "0":
+      geom.set("contype", "0")
+      geom.set("conaffinity", "0")
+      count += 1
+  return count
+
+
 def _find_body(root: ET.Element, name: str) -> ET.Element:
   for b in root.iter("body"):
     if b.get("name") == name:
@@ -626,6 +644,11 @@ def main() -> None:
     add_feet_sites_and_pairs(root, info["foot_geom"])
     rebuild_actuators(root, info["actuator_joint"], info["actuator_forcerange"])
     add_sensors(root)
+
+    # NACH dem Deklarieren der expliziten Fuss-Pairs: Broad-Phase komplett aus
+    # (nur die Pairs kollidieren) -> kleiner XLA-Graph, schneller Compile.
+    n_bp = disable_all_broadphase(root)
+    print(f"[build] Broad-Phase-Kollision auf {n_bp} Geoms deaktiviert (nur explizite <pair>-Kontakte aktiv).")
 
     robot_xml_name = "h2_mjx_feetonly.xml"
     tree.write(out_dir / robot_xml_name, encoding="utf-8", xml_declaration=False)
