@@ -681,3 +681,32 @@ entkoppelt via systemd-run, schreibt `~/h2_rl_runs/h2_full/{metrics.jsonl,best,c
 **Nächster Schritt (autonom):** H2-Langlauf beobachten (lernt er? reward↑/epLen↑ wie G1); nach Konvergenz
 Policy über make_inference_fn+params in die Deploy-Pipeline (`training/deploy/`) einhängen und im VNC rendern.
 Hinweis: `training/rl/_g1_reference/` = lokale Kopie der G1-Playground-Env (Apache-2.0, DeepMind), gitignored.
+
+### 2026-07-07 — v0.21.0 — RL-Policy-Deploy-Harness (parallel zum H2-Training gebaut)
+
+**Anwender:** „können wir noch etwas parallel tun" → gewählt: Deploy-Harness bauen (GPU-frei planbar,
+beschleunigt den finalen H2-Schritt). Jetzt mit der fertigen G1-Policy validiert.
+
+**Neu:** `training/deploy/deploy_playground_policy.py` — lädt eine trainierte Brax/JAX-PPO-Policy (aus
+`train_playground.py`) und rollt sie im Playground-Env aus; meldet Summen-Reward, Episodenlänge (Sturz?),
+Strecke, End-Höhe; optional MP4-Video (mujoco.Renderer). Rekonstruiert Netzwerk + Obs-Normalisierung EXAKT
+wie beim Training via `tp.build_env`/`build_ppo_config`.
+
+**Verifiziert an G1-Policy (`g1_full/best`):** Summen-Reward **9,43**, **300 Schritte (6 s) ohne Sturz**,
+Strecke 1,47 m, Höhe 0,77 m gehalten → G1 läuft, sauber über den Harness geladen. **Das H2-Training lief
+dabei ungestört weiter** (Deploy nutzt On-Demand-Allocator im freien VRAM).
+
+**Gelöste Fallen (wichtig für künftiges Deployment):**
+- Params-Struktur = **Liste [Normalizer, Policy-Netz, Value-Netz]**; für Inferenz nur `(Normalizer, Policy)`
+  an `make_inference_fn`. Value-Netz wird nicht gebraucht.
+- orbax gibt den **Normalizer als dict** zurück → zurück in `running_statistics.RunningStatisticsState`
+  wandeln (sonst „'dict' object has no attribute 'count'").
+- orbax-Checkpoint wurde mit **cuda:0-Sharding** gespeichert → CPU-Restore scheitert („sharding … Got None"
+  bzw. „Device cuda:0 not found"); Restore-Versuche mit RestoreArgs(np.ndarray)/ArrayRestoreArgs(sharding)
+  brachten Pytree-Struktur-Fehler. **Lösung: auf der GPU laden** (cuda:0 vorhanden → plain restore klappt)
+  **mit `XLA_PYTHON_CLIENT_ALLOCATOR=platform`** (nur nötiger VRAM statt 90%-Vorreservierung) → koexistiert
+  mit laufendem Training. Start via systemd-run (entkoppelt).
+
+**Nutzen:** exakt das Werkzeug für H2 fertig — nach Konvergenz `--env H2JoystickFlatTerrain --ckpt
+~/h2_rl_runs/h2_full/best [--video ...]` → H2-Lauf messen + rendern. H2-Langlauf `h2full` läuft weiter
+(noch step-0-Baseline; Evals ~7,5 M Schritte getaktet). Stündlicher Cron-Check (a308c5d6) aktiv.
