@@ -647,3 +647,37 @@ stabil, GPU 99%, kein OOM. eval/sps ~865 (smoke, 256 Envs) → 150M grob 1–2 T
 Kollision aus → nur Fuß-Boxen + Ebene; verifiziert dass MJX H2 dann lädt, ~12k steps/s) + Env-Klasse aus
 der G1-Playground-Vorlage (Sensoren/Reward). Dann H2 trainieren → Policy über make_inference_fn+params in
 die Deploy-Pipeline (`training/deploy/`, namensbasiertes Mapping) einhängen. G1 = Pipeline-Beleg/Baseline.
+
+### 2026-07-07 — v0.20.0 — H2-Trainings-Env gebaut + H2-Langlauf gestartet (das eigentliche Ziel)
+
+**Anwender:** „da es funktioniert, direkt mit H2 starten" + „mach den ganzen Plan autonom weiter".
+G1-Lauf davor sauber konvergiert (Endstand reward **7,09**, Episodenlänge 636 @104M — Checkpoints gesichert,
+Pipeline bewiesen), dann gestoppt und GPU auf H2 umgestellt. Umsetzung via Agent-Team (`h2-env-builder` =
+reinforcement-learning-engineer schrieb die Env aus der G1-Vorlage) + Integration/Debug/Deploy durch mich.
+
+**Neu (`training/rl/h2/`):** komplette MuJoCo-Playground/MJX-Trainingsumgebung für H2, aus der G1-Vorlage
+adaptiert: `h2_constants.py`, `base.py` (`H2Env`), `joystick.py` (`H2JoystickFlatTerrain`), `randomize.py`,
+`build_h2_mjx_model.py`, `README.md`. `train_playground.py` erweitert: `--env H2JoystickFlatTerrain` wird
+direkt instanziiert (kein Registry-Eintrag).
+
+**Wichtigster Designpunkt (vom Agenten gefunden):** H2 hat **Aktuator-Reihenfolge (Beine,Taille,Arme,Kopf)
+≠ qpos-Gelenkreihenfolge (Beine,Taille,Kopf,Arme)** — bei G1 fallen beide zusammen (G1-Code nutzt `qpos[7:]`-
+Slices), bei H2 NICHT. Env adressiert daher jedes Gelenk namensbasiert (actuator_trnid→jnt_qposadr/dofadr),
+nie per Slice. Bei künftigen joystick.py-Änderungen beachten (kein `data.qpos[7:]` einbauen).
+
+**Modell-Build (`build_h2_mjx_model.py`, läuft auf ematalos):** lädt H2-MJCF, flacht via Compiler,
+Mesh/Zylinder-Kollision aus, Fuß-Sohlen-Boxen → `left_foot`/`right_foot` + Sites, IMU-Sites umbenannt auf
+`imu_in_pelvis`/`imu_in_torso` (Env referenziert die Namen hartcodiert), kompletter G1-Sensor-Block mit
+H2-Sites, `<position>`-Aktuatoren (Quelle nutzt `<motor>`), Home-Keyframe per FK (Becken-z=1,003 m).
+**Bug gefixt (ich):** geflachte Kopie erbte Boden+groundplane+skybox → `strip_scene_assets()` entfernt sie,
+sonst „repeated name 'groundplane'". Ergebnis: `h2_mjx_feetonly.xml` + Szene, **nq=38 nv=37 nu=31 nkey=1**.
+
+**Verifiziert auf ematalos:** MJX `put_model(impl=jax)` OK; `H2JoystickFlatTerrain` instanziiert (obs
+state=109/priv=228, action=31); reset+step rechnen Reward; **PPO-Smoke lief** (Compile ~10 min — H2 schwerer
+als G1; erste Eval step0 reward −5,72 epLen 38 = erwarteter Untrainiert-Baseline; best/+ckpt_0 auf Platte).
+**H2-Langlauf `h2full` gestartet** (150M Schritte, num_envs 1024, Domain-Randomizer torso_body_id=16),
+entkoppelt via systemd-run, schreibt `~/h2_rl_runs/h2_full/{metrics.jsonl,best,ckpt_*,final}`.
+
+**Nächster Schritt (autonom):** H2-Langlauf beobachten (lernt er? reward↑/epLen↑ wie G1); nach Konvergenz
+Policy über make_inference_fn+params in die Deploy-Pipeline (`training/deploy/`) einhängen und im VNC rendern.
+Hinweis: `training/rl/_g1_reference/` = lokale Kopie der G1-Playground-Env (Apache-2.0, DeepMind), gitignored.

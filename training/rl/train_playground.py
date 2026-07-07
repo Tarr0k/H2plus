@@ -1,7 +1,9 @@
 """train_playground.py -- PPO-Training fuer Humanoid-Locomotion mit MuJoCo Playground + Brax.
 
-Trainiert eine Lauf-Policy (Standard: `G1JoystickFlatTerrain`, spaeter ein
-`H2...`-Env aus derselben Registry) mit Brax-PPO auf JAX/GPU. Laeuft NICHT auf
+Trainiert eine Lauf-Policy (Standard: `G1JoystickFlatTerrain` aus der Playground-
+Registry; alternativ `--env H2JoystickFlatTerrain`, direkt instanziiert aus
+`training/rl/h2/`, siehe dortige README.md -- kein Registry-Eintrag) mit
+Brax-PPO auf JAX/GPU. Laeuft NICHT auf
 dem Windows-Entwicklungsrechner, sondern auf einem separaten Linux-Rechner mit
 schwacher GPU (Quadro M4000, 8 GB VRAM, Compute 5.2) -- siehe `training/README.md`
 fuer den Gesamtkontext (G1 als Vorlage, Framework-Wahl, Sim-to-Real-Pfad).
@@ -60,6 +62,7 @@ import json
 import os
 import pickle
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -117,13 +120,36 @@ def _safe(fn: Callable[[], Any]) -> Any:
         return None
 
 
+H2_ENV_NAME = "H2JoystickFlatTerrain"
+
+
+def _import_h2():
+    """Lazy-Import des H2-Envs (siehe training/rl/h2/README.md).
+
+    H2 ist KEIN Playground-Erstanbieter-Env und steht deshalb nicht in der
+    `registry` -- Instanziierung erfolgt direkt statt ueber `registry.load`.
+    Lazy (statt Modul-Top-Level), damit ein Problem im H2-Paket (z. B. noch
+    nicht gebautes XML, siehe `build_h2_mjx_model.py`) den G1-Trainingspfad
+    nicht beeintraechtigt.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import h2  # noqa: PLC0415
+    return h2
+
+
 def build_env(env_name: str):
-    """Laedt ein Playground-Env und erzwingt `impl="jax"`.
+    """Laedt ein Env und erzwingt `impl="jax"`.
 
     KRITISCH (verifiziert): Der Playground-Default `impl="warp"` stuerzt auf der
     Quadro M4000 (Compute 5.2) ab. Ohne dieses Erzwingen crasht das Training
     sofort beim ersten Env-Reset -- daher hier zentral und nicht optional.
     """
+    if env_name == H2_ENV_NAME:
+        h2 = _import_h2()
+        cfg = h2.default_config()
+        cfg.impl = "jax"
+        env = h2.H2JoystickFlatTerrain(config=cfg)
+        return env, cfg
     cfg = registry.get_default_config(env_name)
     cfg.impl = "jax"
     env = registry.load(env_name, cfg)
@@ -137,7 +163,12 @@ def build_ppo_config(env_name: str, num_envs: int, num_timesteps: int) -> tuple[
     bewusst ueberschrieben -- alle anderen Hyperparameter kommen unveraendert aus
     `locomotion_params.brax_ppo_config`, es werden hier keine Zahlen erfunden.
     """
-    raw = locomotion_params.brax_ppo_config(env_name)
+    # H2 hat keinen eigenen Registry-Eintrag und damit keine eigene PPO-Config --
+    # G1s Locomotion-Hyperparameter werden 1:1 uebernommen (keine erfundenen
+    # Zahlen, siehe training/rl/h2/README.md). Nur `num_envs`/`batch_size`/
+    # `num_timesteps` werden unten wie fuer jedes Env ueberschrieben.
+    config_env_name = "G1JoystickFlatTerrain" if env_name == H2_ENV_NAME else env_name
+    raw = locomotion_params.brax_ppo_config(config_env_name)
     ppo_params = _to_plain_dict(raw)
 
     network_factory_cfg = ppo_params.pop("network_factory", None)
@@ -324,7 +355,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         description="PPO-Training (MuJoCo Playground + Brax/JAX) fuer Humanoid-Locomotion."
     )
     p.add_argument("--env", default="G1JoystickFlatTerrain",
-                    help="Playground-Env-Name (registry.load), z. B. spaeter ein H2-Env")
+                    help="Env-Name: ein Playground-Registry-Name (registry.load) ODER "
+                         f"'{H2_ENV_NAME}' (direkte Instanziierung, siehe training/rl/h2/README.md; "
+                         "braucht vorher build_h2_mjx_model.py)")
     p.add_argument("--num-timesteps", type=int, default=100_000_000,
                     help="Gesamtzahl Trainings-Timesteps")
     p.add_argument("--num-envs", type=int, default=2048,
@@ -359,11 +392,20 @@ def main(argv: Optional[list[str]] = None) -> None:
     env, cfg = build_env(args.env)
     ppo_params, network_factory = build_ppo_config(args.env, args.num_envs, args.num_timesteps)
 
-    try:
-        randomizer = registry.get_domain_randomizer(args.env)
-    except Exception as exc:
-        print(f"[setup] kein Domain-Randomizer verfuegbar ({exc}); trainiere ohne Randomization")
-        randomizer = None
+    if args.env == H2_ENV_NAME:
+        # H2 steht nicht in der Registry -- eigener Randomizer (siehe
+        # training/rl/h2/randomize.py), `torso_body_id` erst jetzt bekannt
+        # (braucht das bereits gebaute `env`, siehe `build_env` oben).
+        h2 = _import_h2()
+        torso_body_id = env.mj_model.body(h2.h2_constants.ROOT_BODY).id
+        randomizer = h2.bind_domain_randomize(torso_body_id)
+        print(f"[setup] H2-Domain-Randomizer aktiv (torso_body_id={torso_body_id})")
+    else:
+        try:
+            randomizer = registry.get_domain_randomizer(args.env)
+        except Exception as exc:
+            print(f"[setup] kein Domain-Randomizer verfuegbar ({exc}); trainiere ohne Randomization")
+            randomizer = None
 
     state = TrainingState(out_dir=out_dir)
 

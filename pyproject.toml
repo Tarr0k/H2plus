@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "h2_loader"
-version = "0.19.0"
+version = "0.20.0"
 description = "Maschinenlader-Gerüst für den Unitree H2 PLUS (Werkstück laden/entladen an Induktionshärtemaschine)"
 readme = "README.md"
 requires-python = ">=3.10"
