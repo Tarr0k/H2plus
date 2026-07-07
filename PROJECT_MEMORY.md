@@ -733,3 +733,25 @@ Start decoupled: `sudo systemd-run --unit=ddsbridge ... DISPLAY=:2 .../unitree_m
 **Damit frei:** `h2_loader` (unitree_sdk2py/`unitree_sdk_driver`) kann den H2 im Twin über DDS steuern
 (LowCmd senden, LowState lesen) — Basis für die Lade-Sequenz gegen einen Physik-Twin. Nächster Schritt:
 Regelschleife h2_loader→LowCmd→Twin (z. B. Haltepose/PD), dann Lade-Skill gegen den Twin.
+
+### 2026-07-07 — h2_loader steuert den DDS-Twin (Ganzkörper-LowCmd verifiziert)
+
+**Anwender:** „h2_loader steuert den Twin über DDS". Nach dem DDS-Bridge-Fix nun der Nachweis, dass die
+Anwendungsseite den Physik-Twin kommandiert. Neue Tooling (CPU-only, GPU/Training unberührt):
+- `training/deploy/dds_twin_headless.py` — fährt Unitrees `UnitreeSdk2Bridge` OHNE Viewer (die Original-
+  `unitree_mujoco.py` koppelt die Sim an ein Viewer-Fenster → GPU; headless = reine CPU-Physik). Logt
+  Basis-z + Beingelenk-q. Start: `systemd-run … PYTHONPATH=/home/ema/unitree_mujoco/simulate_python
+  --working-directory=…/simulate_python …/.venv/bin/python dds_twin_headless.py`. (Falle: systemd legt den
+  Script-Dir, nicht cwd, auf sys.path → `import config` braucht PYTHONPATH.)
+- `training/deploy/dds_hold_h2.py` — Ganzkörper-PD-Halteregler: sendet rt/lowcmd (unitree_hg, 31 Motoren,
+  q/kp/kd + CRC) für eine Stehpose. Gleiche Schnittstelle wie `hal/drivers/unitree_sdk_driver.py`, aber
+  ALLE Gelenke (der HW-Treiber macht nur Arme via arm_sdk; im Twin gibt's keinen Onboard-Balance-Regler).
+
+**Ergebnis (verifiziert, Domain 1/lo):** 6777 LowCmd-Pakete gesendet, Twin reagiert — Beingelenke folgen
+den Sollwerten (Knie q→~0,6=Ziel). **DDS-Kommandopfad end-to-end belegt.** H2 kippt dabei nach ~2 s
+(z 1,2→0,13 m): reiner Positions-Halteregler = instabiles Gleichgewicht (ADR-0008/v0.18.0-Befund); Gelenke
+folgen den Kommandos auch im Liegen (Kommando-Autorität bewiesen). Balance liefert die RL-Policy.
+
+**Damit ist der Anwendungs-Steuerpfad frei:** h2_loader → LowCmd → Twin → LowState. Nächste Bausteine:
+RL-Lauf-Policy als LowCmd-Quelle einhängen (nach H2-Konvergenz; braucht Obs-aus-LowState-Bridge, ADR-0008),
+bzw. Lade-Sequenz/Arm-Manipulation gegen den Twin.
