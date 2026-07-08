@@ -788,3 +788,20 @@ vgl. g1_mjx_feetonly.xml <default> contype=0) → Kollision NUR über die 3 expl
 Fuss↔Fuss). **Verifiziert:** put_model 0,4s, Step-Compile 28s (statt >2h Hängen), **32,2k steps/s** roh
 (vs. 12k mit Kugeln). H2-Training neu gestartet als `h2_full3` (num_evals 60). PPO-Compile jetzt Minuten,
 Durchsatz deutlich höher → erste echte Lernpunkte in Minuten erwartet.
+
+### 2026-07-07 — H2 flat-Training plateaute → Aktuator-kp auf H2-Masse skaliert (h2_full4)
+
+**Befund:** h2_full3 plateaute ab ~26 M bei reward ~−2,5 / Episodenlänge ~55–60 (bester reward −2,44 @63M,
+bis 89 M nicht übertroffen). G1 war bei 88 M längst stabil (reward ~7, epLen 636). Also KEIN „nur langsamer",
+sondern echtes Plateau.
+
+**Diagnose (nicht Reward, sondern Physik):** `base_height`-Reward ist mit Gewicht 0 abgeschaltet (nicht die
+Ursache). Wahre Ursache: **Aktuator-kp der tragenden Gelenke (Hüfte/Knie/Taille) = 75, 1:1 von G1 (35 kg)
+übernommen.** H2 ~72 kg + größer → mit kp=75 sackt er durch, keine Policy hält ihn >~1 s → hartes Plateau
+bei epLen ~55 (fällt = kann nicht, nicht will nicht).
+
+**Fix (build_h2_mjx_model.py JOINT_CLASS_PARAMS):** kp der Beine/Taille ~2× (Hüfte/Taille 75→150, Knie
+75→200, Knöchel 2→8/20→50), damping mit. Arme/Kopf unverändert (keine Lokomotionslast). Bei RL unkritisch,
+dass kp höher ist (Policy adaptiert; anders als fester PD-Regler v0.18.0). Modell neu gebaut (flat/rough/
+stairs alle nkey=1). **Neuer Lauf h2_full4** (150M/1024envs/num_evals60), h2_full3/best bleibt als Baseline.
+Wenn h2_full4 auch plateaut → nächste Iteration Reward-Gewichte/action_scale.

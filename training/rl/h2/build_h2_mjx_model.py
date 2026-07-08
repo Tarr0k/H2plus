@@ -122,16 +122,23 @@ import h2_constants as consts  # noqa: E402
 # falls das Original-Gelenk keinen nennenswerten damping/armature-Wert hat.
 # Kopf-Klassen (kein G1-Vorbild) sind an die leichteste G1-Klasse (Handgelenk)
 # angelehnt -- klar als Annahme markiert, zum Nachjustieren gedacht.
+# WICHTIG (2026-07-07): kp der TRAGENDEN Gelenke (Beine/Taille) auf H2s ~72 kg
+# skaliert (~2x der G1-Werte). Grund: mit den 1:1 von G1 (35 kg) uebernommenen
+# kp=75 sackte H2 unter dem eigenen Gewicht durch -> flat-Training plateaute bei
+# Episodenlaenge ~55 / reward ~-2,5 (fiel nach ~1 s, physikalisch nicht haltbar).
+# Arme/Kopf tragen keine Lokomotionslast -> unveraendert. Bei RL unkritisch, dass
+# kp hoeher ist (die Policy adaptiert an die Aktuatordynamik; anders als beim
+# festen PD-Regler v0.18.0, wo hohe Gains destabilisierten).
 JOINT_CLASS_PARAMS = {
-    "hip_pitch":      dict(kp=75, damping=2.0, armature=0.01017752004),
-    "hip_roll":       dict(kp=75, damping=2.0, armature=0.025101925),
-    "hip_yaw":        dict(kp=75, damping=2.0, armature=0.01017752004),
-    "knee":           dict(kp=75, damping=2.0, armature=0.025101925),
-    "ankle_roll":     dict(kp=2,  damping=0.2, armature=0.00721945),
-    "ankle_pitch":    dict(kp=20, damping=1.0, armature=0.00721945),
-    "waist_yaw":      dict(kp=75, damping=2.0, armature=0.01017752004),
-    "waist_roll":     dict(kp=75, damping=2.0, armature=0.00721945),
-    "waist_pitch":    dict(kp=75, damping=2.0, armature=0.00721945),
+    "hip_pitch":      dict(kp=150, damping=4.0, armature=0.01017752004),
+    "hip_roll":       dict(kp=150, damping=4.0, armature=0.025101925),
+    "hip_yaw":        dict(kp=150, damping=4.0, armature=0.01017752004),
+    "knee":           dict(kp=200, damping=5.0, armature=0.025101925),
+    "ankle_roll":     dict(kp=8,   damping=0.5, armature=0.00721945),
+    "ankle_pitch":    dict(kp=50,  damping=2.0, armature=0.00721945),
+    "waist_yaw":      dict(kp=150, damping=4.0, armature=0.01017752004),
+    "waist_roll":     dict(kp=150, damping=4.0, armature=0.00721945),
+    "waist_pitch":    dict(kp=150, damping=4.0, armature=0.00721945),
     "shoulder_pitch": dict(kp=75, damping=2.0, armature=0.003609725),
     "shoulder_roll":  dict(kp=75, damping=2.0, armature=0.003609725),
     "shoulder_yaw":   dict(kp=75, damping=2.0, armature=0.003609725),
