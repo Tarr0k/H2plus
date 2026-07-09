@@ -117,8 +117,15 @@ def _build_policy(env, env_name: str, ckpt_dir: Path):
     return policy
 
 
-def _rollout(env, policy, steps: int, seed: int = 0):
-    """Ein Episoden-Rollout; sammelt qpos-Trajektorie + Reward/Done je Schritt."""
+def _rollout(env, policy, steps: int, seed: int = 0, cmd=None):
+    """Ein Episoden-Rollout; sammelt qpos-Trajektorie + Reward/Done je Schritt.
+
+    `cmd` (optional, [vx, vy, yaw]): festes Geschwindigkeitskommando. Ohne Angabe
+    zieht die Joystick-Env beim Reset ein ZUFAELLIGES Kommando (und resampled
+    periodisch) -- der Roboter faehrt dann irgendeine Richtung (auch rueckwaerts).
+    Mit `cmd` wird `state.info["command"]` nach reset/step fest gehalten (gleiches
+    Muster wie extract_g1_reference.py), damit ein gerichteter Lauf sichtbar wird.
+    """
     reset = jax.jit(env.reset)
     step = jax.jit(env.step)
     inference = jax.jit(policy)
@@ -126,6 +133,8 @@ def _rollout(env, policy, steps: int, seed: int = 0):
     rng = jax.random.PRNGKey(seed)
     rng, key = jax.random.split(rng)
     state = reset(key)
+    if cmd is not None:
+        state.info["command"] = cmd
 
     qpos_traj = [np.array(state.data.qpos)]
     total_reward = 0.0
@@ -135,6 +144,8 @@ def _rollout(env, policy, steps: int, seed: int = 0):
         rng, key = jax.random.split(rng)
         action, _ = inference(state.obs, key)
         state = step(state, action)
+        if cmd is not None:
+            state.info["command"] = cmd
         qpos_traj.append(np.array(state.data.qpos))
         total_reward += float(state.reward)
         episode_len += 1
@@ -202,6 +213,11 @@ def main() -> None:
     ap.add_argument("--ckpt", required=True, type=Path, help="Checkpoint-Ordner (best/ckpt_<n>/final)")
     ap.add_argument("--steps", type=int, default=500, help="Rollout-Schritte (50 Hz -> 500 = 10 s)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--vx", type=float, default=None,
+                    help="festes Vorwaerts-Kommando [m/s]; ohne Angabe zieht die Env ein Zufallskommando "
+                         "(Roboter faehrt dann beliebige Richtung, auch rueckwaerts)")
+    ap.add_argument("--vy", type=float, default=0.0, help="festes Seitwaerts-Kommando [m/s] (nur mit --vx)")
+    ap.add_argument("--yaw", type=float, default=0.0, help="feste Drehrate [rad/s] (nur mit --vx)")
     ap.add_argument("--video", type=Path, default=None, help="optional: MP4-Ausgabepfad (braucht GPU/EGL)")
     ap.add_argument("--viewer", action="store_true",
                     help="Live-Fenster: Rollout in Endlosschleife im MuJoCo-Viewer abspielen (VNC $DISPLAY)")
@@ -222,8 +238,13 @@ def main() -> None:
     print(f"[deploy] lade Policy aus {ckpt} ...")
     policy = _build_policy(env, args.env, ckpt)
 
+    cmd = None
+    if args.vx is not None:
+        import jax.numpy as jnp
+        cmd = jnp.array([args.vx, args.vy, args.yaw])
+        print(f"[deploy] festes Kommando: vx={args.vx} vy={args.vy} yaw={args.yaw}")
     print(f"[deploy] Rollout ueber {args.steps} Schritte ...")
-    qpos_traj, total_reward, ep_len, done_at = _rollout(env, policy, args.steps, args.seed)
+    qpos_traj, total_reward, ep_len, done_at = _rollout(env, policy, args.steps, args.seed, cmd)
 
     x_dist = float(qpos_traj[-1][0] - qpos_traj[0][0])
     print("[deploy] ---- Ergebnis ----")

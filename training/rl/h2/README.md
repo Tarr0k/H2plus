@@ -157,6 +157,47 @@ ausschliesslich `self.get_actuator_qpos/-qvel/-qacc(data)` statt
 - **`<option>` (Solver/Timestep)**: bewusst NICHT angefasst -- das Team hat
   mit den Original-H2-Werten bereits ~12k Steps/s in MJX erreicht.
 
+## G1-Imitation (optionaler Reward-Term, standardmaessig AUS)
+
+`joystick.py` kennt einen zusaetzlichen Reward-Term `imitation`
+(`reward_config.scales.imitation`, Default `0.0`), der die 12 Bein-Gelenkwinkel
+weich in Richtung einer phasenindizierten G1-Gangreferenz zieht -- gedacht als
+Stil-Fuehrung, die H2 aus dem bisherigen Plateau (Episodenlaenge ~65 bei reinem
+Task-/Balance-Reward) herausholen soll, statt den Gang komplett "aus dem Nichts"
+zu suchen. **Kein exaktes Nachahmen**: reines Kopieren von G1s Gelenkwinkeln haelt
+den gut doppelt so schweren H2 NICHT aufrecht (verifiziert in
+`training/deploy/deploy_h2_g1policy.py`: Sturz nach ~1,5 s) -- der Term ist additiv
+neben dem bestehenden Tracking-/Balance-Reward, sein Gewicht ist bewusst tunebar.
+
+### Ablauf
+
+1. **Referenzgang aufzeichnen** (auf ematalos, braucht kurz die GPU + die
+   trainierte G1-Policy unter `~/h2_rl_runs/g1_full/best`):
+   ```sh
+   XLA_PYTHON_CLIENT_ALLOCATOR=platform python training/rl/h2/extract_g1_reference.py \
+       --ckpt ~/h2_rl_runs/g1_full/best --steps 4000 --vx 0.5
+   ```
+   Rollt die G1-Policy mit FESTEM Kommando (`vx=0.5, vy=0, yaw=0` per Default) aus,
+   bin(n)t die 12 Bein-Gelenkwinkel nach Gangphase (`state.info["phase"]`, 32 Bins
+   per Default), glaettet zirkular und retargetet auf H2-Gelenkreihenfolge
+   (Knoechel-Swap, siehe oben). Schreibt `training/rl/h2/assets/g1_gait_reference.npy`
+   + `.json`-Metadaten (Bins, Kommando, Quelle, Stichprobenzahl je Bin).
+
+2. **Imitations-Gewicht aktivieren** (Training mit `--env H2JoystickFlatTerrain`):
+   ```sh
+   python train_playground.py --env H2JoystickFlatTerrain --imitation-weight 1.0 \
+       --out-dir ~/h2_rl_runs/h2_imitation
+   ```
+   Setzt intern `reward_config.scales.imitation` per `config_overrides` (siehe
+   `train_playground.py::build_env`). Ohne `--imitation-weight` bleibt der Term bei
+   `0.0` (Default) -- bestehende flat/rough/stairs-Laeufe sind unveraendert.
+   `--imitation-weight` ist nur fuer `--env H2JoystickFlatTerrain` wirksam (G1s
+   Reward-Config kennt keinen `imitation`-Skalenwert).
+
+Fehlt `assets/g1_gait_reference.npy` (Schritt 1 noch nicht gelaufen), bleibt der
+Term inaktiv (klare Warnung beim Env-Start), auch wenn ein Gewicht > 0 gesetzt ist
+-- das Training laeuft trotzdem normal weiter.
+
 ## Zu verifizieren, bevor dem Ergebnis vertraut wird
 
 1. **Aktuator-Namen fuer Taille/Arme/Kopf** (`h2_constants._WAIST_/_ARM_/

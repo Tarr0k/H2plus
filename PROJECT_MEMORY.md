@@ -805,3 +805,38 @@ bei epLen ~55 (fällt = kann nicht, nicht will nicht).
 dass kp höher ist (Policy adaptiert; anders als fester PD-Regler v0.18.0). Modell neu gebaut (flat/rough/
 stairs alle nkey=1). **Neuer Lauf h2_full4** (150M/1024envs/num_evals60), h2_full3/best bleibt als Baseline.
 Wenn h2_full4 auch plateaut → nächste Iteration Reward-Gewichte/action_scale.
+
+### 2026-07-09 — kp-Fix durchgefallen → G1-Imitations-Reward (DeepMimic-lite), h2_imitation gestartet (v0.23.0)
+
+**kp-Fix-Verdikt:** h2_full4 plateaute bei reward **−2,45 / epLen 63** (~1,2 s), flach ab 40M
+(step 49,8M/150M). `termination −100` dominiert → H2 fällt weiter nach ~1,2 s. Der kp-Fix hat also
+NICHT durchgeschlagen (nur epLen 55→63). Erwartungsgemäß: nächster Hebel = Referenz-geführtes Lernen.
+
+**Ansatz (kein Mocap-Suit → vom G1 ableiten):** DeepMimic-lite, d.h. phasenindizierter Referenz-
+Tracking-Reward (KEIN AMP-Diskriminator — Playground hat kein AMP-Modul; sein „gait-tracking" ist nur
+Fuß-Phase, keine Bewegungs-Imitation). Belohnt H2 dafür, die G1-Beinwinkel bei der aktuellen Gangphase
+nachzufahren: `imitation = exp(-imitation_k · mean((leg_q − ref_leg_q(phase))²))`, JAX-kompatibel.
+
+**Neue/geänderte Dateien:**
+- `training/rl/h2/extract_g1_reference.py` (NEU): rollt trainierte G1-Policy mit FESTEM Kommando
+  (vx=0,5) aus, greift 12 Beinwinkel NAMENSBASIERT ab (`{side}_{suffix}_joint`), binnt zirkular nach
+  Phase (links+rechts = Stichproben derselben Phase→Winkel-Funktion, wie `gait.get_rz`), retargetet auf
+  H2 (Knöchel-Swap), speichert `assets/g1_gait_reference.npy` (32×6) + `.json`.
+- `training/rl/h2/joystick.py`: `reward_config.scales.imitation` (Default 0.0=AUS) + `imitation_k=50`;
+  lädt Referenz in `_post_init` (fehlt sie → Warnung, Env läuft, Reward=0.0); `_ref_leg_q` (zirkuläre
+  lin. Interpolation) + `_reward_imitation` + `imitation`-Key in `_get_reward`.
+- `training/rl/train_playground.py`: `--imitation-weight` + `config_overrides`-Durchreichung an H2-Env.
+- `training/deploy/deploy_playground_policy.py`: `--vx/--vy/--yaw` (festes Kommando; ohne → Env zieht
+  Zufallskommando, Roboter läuft dann beliebige Richtung — erklärt „G1 läuft rückwärts" im Viewer).
+- `training/rl/h2/h2_constants.py`: `GAIT_REFERENCE_DIR`, `LEG_JOINT_ORDER`, `LEFT/RIGHT_LEG_INDICES`.
+
+**G1-Referenz erzeugt (vx=0,5):** shape (32,6), alle Bins gefüllt (235–257 Samples), keine NaN,
+Winkel [−0,45; 1,07] rad, Knie flext über Phase (Gang-Signatur). G1 im Viewer verifiziert:
+vorwärts +2,45 m/20 s, kein Sturz (rückwärts vorher = Zufallskommando, kein Defizit).
+
+**Smoke (weight 1.0, 256 envs):** Reward-Wiring bestätigt — `eval/episode_reward/imitation` steigt
+2,6→6,5, Total −7,3→−4,05 über ~1M Steps → H2 orientiert sich aktiv am G1-Gang.
+
+**Voller Lauf `h2_imitation`** (systemd-Unit, entkoppelt): 1024 envs / 150M / imitation-weight 1.0,
+out-dir `~/h2_rl_runs/h2_imitation`. Referenz nachweislich geladen (32 Bins, „verfuegbar"). h2_full4
+bleibt als Baseline (resumbar ab ckpt_49807360). 5h-Cron überwacht (nur Notification bei Fortschritt/Problem).

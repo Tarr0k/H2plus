@@ -26,6 +26,15 @@ Hoehenkarten-/Terrain-Beobachtung, exakt wie G1s `G1JoystickRoughTerrain`.
 FOLGESCHRITT (noch NICHT implementiert): eine echte Perception-Erweiterung
 (z. B. ein lokales Hoehenkarten-Sample-Gitter um die Fuesse/den Torso in
 `_get_obs`) waere fuer zielgerichtetes Treppensteigen langfristig noetig.
+
+G1-Imitations-Reward (optional, standardmaessig AUS): `reward_config.scales.imitation`
+(Default 0.0) belohnt Aehnlichkeit der 12 Bein-Gelenkwinkel zu einer phasenindizierten
+G1-Gangreferenz (`h2_constants.G1_GAIT_REFERENCE_NPY`, siehe `extract_g1_reference.py`).
+Der Reward ist bewusst WEICH (Stil-Fuehrung neben dem bestehenden Balance-/Tracking-
+Reward, kein exaktes Nachfahren) -- reines Kopieren von G1s Gelenkwinkeln haelt den
+gut doppelt so schweren H2 NICHT aufrecht (verifiziert in `deploy_h2_g1policy.py`:
+Sturz nach ~1,5 s). Fehlt die Referenzdatei, bleibt der Term inaktiv (Env bleibt
+lauffaehig, klare Warnung beim Start), siehe `_post_init` unten.
 """
 
 from typing import Any, Dict, Optional, Union
@@ -95,11 +104,20 @@ def default_config() -> config_dict.ConfigDict:
               joint_deviation_hip=-0.25,
               dof_pos_limits=-1.0,
               pose=-0.1,
+              # G1-Imitation (siehe Modul-Docstring): 0.0 = AUS (Default, flat/rough/
+              # stairs bleiben dadurch unveraendert). Aktivierung z. B. via
+              # `train_playground.py --imitation-weight 1.0` oder direkt per
+              # `config_overrides={"reward_config.scales.imitation": 1.0}`.
+              imitation=0.0,
           ),
           tracking_sigma=0.25,
           max_foot_height=0.15,
           base_height_target=0.5,
           max_contact_force=500.0,
+          # Schaerfe des Imitations-Rewards (exp(-imitation_k * mittlerer quadr.
+          # Gelenkwinkel-Fehler)); rein experimentell, kein Datenblattwert -- bei
+          # Bedarf zusammen mit `imitation`-Gewicht nachjustieren.
+          imitation_k=50.0,
       ),
       push_config=config_dict.create(
           enable=True,
@@ -204,6 +222,28 @@ class H2JoystickFlatTerrain(h2_base.H2Env):
     self._right_foot_left_foot_found_sensor = self._mj_model.sensor(
         "right_foot_left_foot_found"
     ).id
+
+    # G1-Imitations-Reward (siehe Modul-Docstring): Referenztabelle EINMALIG laden.
+    self._left_leg_indices = jp.array(consts.LEFT_LEG_INDICES)
+    self._right_leg_indices = jp.array(consts.RIGHT_LEG_INDICES)
+    self._gait_ref = None
+    self._gait_ref_n_bins = 0
+    if consts.G1_GAIT_REFERENCE_NPY.exists():
+      ref = np.load(str(consts.G1_GAIT_REFERENCE_NPY))
+      self._gait_ref_n_bins = int(ref.shape[0])
+      self._gait_ref = jp.array(ref)
+      print(
+          f"[H2Joystick] G1-Gangreferenz geladen: {consts.G1_GAIT_REFERENCE_NPY} "
+          f"({self._gait_ref_n_bins} Phasen-Bins) -- Imitations-Reward verfuegbar "
+          f"(Gewicht ueber reward_config.scales.imitation, Default 0.0 = AUS)."
+      )
+    elif self._config.reward_config.scales.imitation != 0.0:
+      print(
+          f"[H2Joystick] WARNUNG: reward_config.scales.imitation="
+          f"{self._config.reward_config.scales.imitation} ist ungleich 0, aber "
+          f"{consts.G1_GAIT_REFERENCE_NPY} fehlt -- Imitations-Reward bleibt 0.0 "
+          "(erst extract_g1_reference.py ausfuehren). Env laeuft normal weiter."
+      )
 
   def reset(self, rng: jax.Array) -> mjx_env.State:
     qpos = self._init_q
@@ -547,6 +587,8 @@ class H2JoystickFlatTerrain(h2_base.H2Env):
         "joint_deviation_knee": self._cost_joint_deviation_knee(qpos_act),
         "dof_pos_limits": self._cost_joint_pos_limits(qpos_act),
         "pose": self._cost_pose(qpos_act),
+        # G1-Imitation (siehe Modul-Docstring; 0.0 solange keine Referenz geladen ist).
+        "imitation": self._reward_imitation(qpos_act, info["phase"]),
     }
 
   def _cost_contact_force(self, data: mjx.Data) -> jax.Array:
@@ -585,6 +627,41 @@ class H2JoystickFlatTerrain(h2_base.H2Env):
     out_of_limits = -jp.clip(qpos_act - self._soft_lowers, None, 0.0)
     out_of_limits += jp.clip(qpos_act - self._soft_uppers, 0.0, None)
     return jp.sum(out_of_limits)
+
+  # G1-Imitation (siehe Modul-Docstring).
+
+  def _ref_leg_q(self, phase: jax.Array) -> jax.Array:
+    """G1-Referenz-Beinwinkel (6 Gelenke, H2-Reihenfolge) an `phase` (Shape wie
+    `info["phase"]`, hier (2,) = [linkes Bein, rechtes Bein]).
+
+    Zirkulare lineare Interpolation zwischen den `self._gait_ref_n_bins` Bins
+    (Bins decken [-pi, pi) gleichmaessig ab, Bin 0 beginnt bei -pi). Rueckgabe-
+    Shape (2, 6) -- Zeile 0/1 = Referenz fuer das linke/rechte Bein an dessen
+    EIGENER Phase (dieselbe Phase->Gelenkwinkel-Funktion gilt fuer beide Beine,
+    siehe `extract_g1_reference.py`, analog zu `gait.get_rz` fuer die Fusshoehe).
+    """
+    n_bins = self._gait_ref_n_bins
+    bin_width = 2.0 * jp.pi / n_bins
+    pos = (phase + jp.pi) / bin_width  # in [0, n_bins)
+    idx0 = jp.floor(pos).astype(jp.int32) % n_bins
+    idx1 = (idx0 + 1) % n_bins
+    frac = (pos - jp.floor(pos))[..., None]
+    return self._gait_ref[idx0] * (1.0 - frac) + self._gait_ref[idx1] * frac
+
+  def _reward_imitation(self, qpos_act: jax.Array, phase: jax.Array) -> jax.Array:
+    """Soft-Tracking-Reward auf die G1-Gangreferenz (0.0, solange keine Referenz
+    geladen ist -- `self._gait_ref` ist ein Python-/Konstruktionszeit-Attribut,
+    die Verzweigung hier ist deshalb bei jedem Trace statisch, kein Sonderfall
+    fuer `jit` noetig)."""
+    if self._gait_ref is None:
+      return jp.array(0.0)
+    ref = self._ref_leg_q(phase)  # (2, 6): Zeile 0/1 = links/rechts.
+    error = jp.concatenate([
+        qpos_act[self._left_leg_indices] - ref[0],
+        qpos_act[self._right_leg_indices] - ref[1],
+    ])
+    mse = jp.mean(jp.square(error))
+    return jp.exp(-self._config.reward_config.imitation_k * mse)
 
   def _reward_tracking_lin_vel(self, commands: jax.Array, local_vel: jax.Array) -> jax.Array:
     lin_vel_error = jp.sum(jp.square(commands[:2] - local_vel[:2]))

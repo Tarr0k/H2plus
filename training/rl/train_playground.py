@@ -142,7 +142,8 @@ def _import_h2():
     return h2
 
 
-def build_env(env_name: str, task: str = "flat_terrain"):
+def build_env(env_name: str, task: str = "flat_terrain",
+             config_overrides: Optional[dict] = None):
     """Laedt ein Env und erzwingt `impl="jax"`.
 
     KRITISCH (verifiziert): Der Playground-Default `impl="warp"` stuerzt auf der
@@ -153,12 +154,23 @@ def build_env(env_name: str, task: str = "flat_terrain"):
     "flat_terrain"/"rough_terrain"/"stairs") -- fuer G1-Registry-Envs OHNE
     Wirkung, da dort jede Terrain-Variante ein EIGENER Registry-Eintrag ist
     (z. B. "G1JoystickRoughTerrain"), kein Konstruktor-Parameter.
+
+    `config_overrides` (dotted-key Dict, z. B. {"reward_config.scales.imitation":
+    1.0}) wird an den Env-Konstruktor durchgereicht -- fuer H2 der einzige
+    unterstuetzte Weg, `default_config()`-Werte NACH dem Erstellen der ConfigDict
+    zu setzen (siehe `h2/joystick.py::H2JoystickFlatTerrain.__init__`, nutzt
+    intern `mjx_env.MjxEnv`s eigenen Override-Mechanismus). Fuer G1/Registry-Envs
+    aktuell UNGENUTZT (kein Aufrufer setzt hier etwas) -- `--imitation-weight` in
+    `main()` ist bewusst auf den H2-Zweig beschraenkt, da G1s Reward-Config kein
+    `imitation`-Skalenwert kennt.
     """
     if env_name == H2_ENV_NAME:
         h2 = _import_h2()
         cfg = h2.default_config()
         cfg.impl = "jax"
-        env = h2.H2JoystickFlatTerrain(task=task, config=cfg)
+        env = h2.H2JoystickFlatTerrain(
+            task=task, config=cfg, config_overrides=config_overrides
+        )
         return env, cfg
     cfg = registry.get_default_config(env_name)
     cfg.impl = "jax"
@@ -393,6 +405,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                     help="Schneller Rauchtest (~Minuten): num_timesteps=200000, num_envs=256")
     p.add_argument("--resume", action="store_true",
                     help="Aus vorhandenem Checkpoint (best/ bzw. juengster ckpt_*) fortsetzen")
+    p.add_argument("--imitation-weight", type=float, default=None,
+                    help="Setzt reward_config.scales.imitation (G1-Gangimitation, siehe "
+                         f"h2/joystick.py-Modul-Docstring). Nur wirksam fuer --env {H2_ENV_NAME} "
+                         "-- braucht vorher extract_g1_reference.py (h2_constants.G1_GAIT_REFERENCE_NPY). "
+                         "Default None = unveraendert (Env-Default 0.0 = AUS).")
     args = p.parse_args(argv)
 
     if args.smoke:
@@ -413,7 +430,18 @@ def main(argv: Optional[list[str]] = None) -> None:
     print(f"[setup] env={args.env}  task={args.task}  seed={args.seed}  num_envs={args.num_envs}  "
           f"num_timesteps={args.num_timesteps:,}  out_dir={out_dir}")
 
-    env, cfg = build_env(args.env, args.task)
+    h2_config_overrides = None
+    if args.imitation_weight is not None:
+        if args.env != H2_ENV_NAME:
+            print(f"[setup] WARNUNG: --imitation-weight ist nur fuer --env {H2_ENV_NAME} wirksam "
+                  f"(G1s Reward-Config kennt kein 'imitation' -- wird fuer --env {args.env} ignoriert).")
+        else:
+            h2_config_overrides = {"reward_config.scales.imitation": args.imitation_weight}
+            print(f"[setup] G1-Imitations-Reward aktiviert: reward_config.scales.imitation="
+                  f"{args.imitation_weight} (braucht extract_g1_reference.py-Ausgabe unter "
+                  "h2_constants.G1_GAIT_REFERENCE_NPY, sonst bleibt der Term trotz Gewicht bei 0.0)")
+
+    env, cfg = build_env(args.env, args.task, config_overrides=h2_config_overrides)
     ppo_params, network_factory = build_ppo_config(args.env, args.num_envs, args.num_timesteps, args.num_evals)
 
     if args.env == H2_ENV_NAME:

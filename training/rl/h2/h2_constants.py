@@ -42,6 +42,14 @@ FEET_ONLY_FLAT_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_flat_terra
 FEET_ONLY_ROUGH_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_rough_terrain.xml"
 FEET_ONLY_STAIRS_XML = ROOT_PATH / "xmls" / "scene_mjx_feetonly_stairs.xml"
 
+# G1-Gangreferenz fuer den Imitations-Reward (siehe joystick.py + extract_g1_reference.py).
+# Optional -- existiert erst nach einem Lauf von extract_g1_reference.py (auf ematalos,
+# braucht die trainierte G1-Policy). Solange die Datei fehlt bleibt der Reward-Term
+# inaktiv (siehe joystick.py::_post_init).
+GAIT_REFERENCE_DIR = ROOT_PATH / "assets"
+G1_GAIT_REFERENCE_NPY = GAIT_REFERENCE_DIR / "g1_gait_reference.npy"
+G1_GAIT_REFERENCE_META_JSON = GAIT_REFERENCE_DIR / "g1_gait_reference.json"
+
 
 def task_to_xml(task_name: str) -> epath.Path:
   """'flat_terrain' (Standard), 'rough_terrain' und 'stairs' verfuegbar.
@@ -146,6 +154,16 @@ WAIST_INDICES = _actuator_indices(WAIST_ACTUATORS)
 ARM_INDICES = _actuator_indices(ARM_ACTUATORS)
 HIP_ROLL_YAW_INDICES = _actuator_indices(HIP_ROLL_YAW_ACTUATORS)
 KNEE_INDICES = _actuator_indices(KNEE_ACTUATORS)
+
+# Fuer den Imitations-Reward (siehe joystick.py): die 6 Bein-Gelenke JE SEITE, in
+# genau dieser Reihenfolge -- das ist auch die Spaltenreihenfolge der G1-Gang-
+# referenztabelle (siehe extract_g1_reference.py, dort bereits von G1- auf diese
+# H2-Reihenfolge retargetiert, inkl. Knoechel-Swap).
+LEG_JOINT_ORDER = tuple(_LEG_SUFFIXES)
+LEFT_LEG_ACTUATORS = [f"left_{s}" for s in _LEG_SUFFIXES]
+RIGHT_LEG_ACTUATORS = [f"right_{s}" for s in _LEG_SUFFIXES]
+LEFT_LEG_INDICES = _actuator_indices(LEFT_LEG_ACTUATORS)
+RIGHT_LEG_INDICES = _actuator_indices(RIGHT_LEG_ACTUATORS)
 
 # fmt: off
 # Pose-Gewichte je Aktuator -- identische Systematik wie G1 (kleine Gewichtung fuer
